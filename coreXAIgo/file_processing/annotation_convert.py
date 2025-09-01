@@ -5,8 +5,6 @@ from pathlib import Path
 from typing import List, Dict, Tuple
 from ..utils import set_logging
 
-logger = set_logging(__name__)
-
 __all__ = ['YOLOAnnotation', 'LabelMeAnnotation', 'VOCAnnotation', 'AnnotationConverter']
 
 
@@ -73,7 +71,7 @@ class YOLOAnnotation:
         - 对于分割多边形：坐标格式为 [x1, y1, x2, y2, ..., xn, yn]，至少需要6个值（3个点）
      """
 
-    def __init__(self, class_names: List[str]):
+    def __init__(self, class_names: List[str], verbose=False):
         """
         初始化YOLO标注器
 
@@ -82,6 +80,7 @@ class YOLOAnnotation:
                         例如：['person', 'car'] 表示 class_id 0=person, 1=car
         """
         self.class_names = class_names
+        self.logger = set_logging("YOLOAnnotation", verbose=verbose)
         self.annotations = []
 
     def add_annotation(self, class_id: int, normalized_points: List[float]):
@@ -149,7 +148,7 @@ class YOLOAnnotation:
         """
         with open(txt_path, 'w') as f:
             f.write("\n".join(self.to_txt_lines()))
-        logger.info(f"YOLO 标签保存成功: {txt_path}")
+        self.logger.info(f"YOLO 标签保存成功: {txt_path}")
 
 
 class LabelMeAnnotation:
@@ -195,7 +194,7 @@ class LabelMeAnnotation:
         >>> data_dict = annotator.to_dict()
     """
 
-    def __init__(self, image_path: str, image_size: tuple, shapes: List[Dict] = None):
+    def __init__(self, image_path: str, image_size: tuple, shapes: List[Dict] = None, verbose=False):
         """
         初始化LabelMe标注器
 
@@ -210,6 +209,7 @@ class LabelMeAnnotation:
         self.imagePath = str(Path(image_path).name)
         self.imageData = None
         self.imageHeight, self.imageWidth = image_size
+        self.logger = set_logging("LabelMeAnnotation", verbose=verbose)
 
     def add_shape(self, label: str, points: List[List[float]], shape_type: str = "polygon"):
         """
@@ -282,7 +282,7 @@ class LabelMeAnnotation:
         """
         with open(json_path, 'w', encoding='utf-8') as f:
             json.dump(self.to_dict(), f, indent=2, ensure_ascii=False)
-        logger.info(f"LabelMe JSON 保存成功: {json_path}")
+        self.logger.info(f"LabelMe JSON 保存成功: {json_path}")
 
 
 class VOCObject:
@@ -413,7 +413,7 @@ class VOCAnnotation:
         >>> batch_annotator.save("annotations/002.xml")
     """
 
-    def __init__(self, image_path: str, image_size: Tuple[int, int], objects: List[VOCObject] = None):
+    def __init__(self, image_path: str, image_size: Tuple[int, int], objects: List[VOCObject] = None, verbose=False):
         """
         初始化VOC标注器
 
@@ -425,6 +425,7 @@ class VOCAnnotation:
         self.image_path = image_path
         self.image_width, self.image_height = image_size
         self.objects = objects if objects else []
+        self.logger = set_logging("VOCAnnotation", verbose=verbose)
 
     def add_object(self, name: str, bbox: List[float], difficult: int = 0):
         """
@@ -493,18 +494,8 @@ class VOCAnnotation:
 
         with open(xml_path, 'w', encoding='utf-8') as f:
             f.write(xml_content)
-        logger.info(f"VOC XML 保存成功: {xml_path}")
+        self.logger.info(f"VOC XML 保存成功: {xml_path}")
 
-
-class AnnotationConverter:
-    import os
-import json
-import cv2
-from pathlib import Path
-from typing import List, Optional, Tuple
-import logging
-
-logger = logging.getLogger(__name__)
 
 class AnnotationConverter:
     """
@@ -539,7 +530,7 @@ class AnnotationConverter:
         >>>     converter.voc_to_yolo_obj(str(xml_file))
     """
 
-    def __init__(self, class_names: List[str] = None):
+    def __init__(self, class_names: List[str] = None, verbose=False):
         """
         初始化标注转换器
 
@@ -555,6 +546,8 @@ class AnnotationConverter:
             >>> converter = AnnotationConverter()
         """
         self.class_names = class_names if class_names else ["object"]
+        self.verbose = verbose
+        self.logger = set_logging("AnnotationConverter", verbose=self.verbose)
 
     def _get_image_size(self, image_path: str) -> tuple:
         """
@@ -601,7 +594,7 @@ class AnnotationConverter:
         with open(json_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
 
-        yolo_ann = YOLOAnnotation(self.class_names)
+        yolo_ann = YOLOAnnotation(self.class_names, verbose=self.verbose)
         img_width = data['imageWidth']
         img_height = data['imageHeight']
 
@@ -649,7 +642,7 @@ class AnnotationConverter:
         os.makedirs(output_dir, exist_ok=True)
 
         img_height, img_width = self._get_image_size(img_path)
-        labelme_ann = LabelMeAnnotation(img_path, (img_height, img_width))
+        labelme_ann = LabelMeAnnotation(img_path, (img_height, img_width), verbose=self.verbose)
 
         with open(txt_path, 'r') as f:
             lines = f.readlines()
@@ -706,7 +699,7 @@ class AnnotationConverter:
         with open(json_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
 
-        yolo_ann = YOLOAnnotation(self.class_names)
+        yolo_ann = YOLOAnnotation(self.class_names, verbose=self.verbose)
         img_width = data['imageWidth']
         img_height = data['imageHeight']
 
@@ -762,7 +755,7 @@ class AnnotationConverter:
         os.makedirs(output_dir, exist_ok=True)
 
         img_height, img_width = self._get_image_size(img_path)
-        labelme_ann = LabelMeAnnotation(img_path, (img_height, img_width))
+        labelme_ann = LabelMeAnnotation(img_path, (img_height, img_width), verbose=self.verbose)
 
         with open(txt_path, 'r') as f:
             lines = f.readlines()
@@ -828,7 +821,8 @@ class AnnotationConverter:
 
         voc_ann = VOCAnnotation(
             image_path=data['imagePath'],
-            image_size=(data['imageWidth'], data['imageHeight'])
+            image_size=(data['imageWidth'], data['imageHeight']),
+            verbose=self.verbose
         )
 
         for shape in data['shapes']:
@@ -882,7 +876,7 @@ class AnnotationConverter:
         img_width = int(size.find('width').text)
         img_height = int(size.find('height').text)
 
-        labelme_ann = LabelMeAnnotation(img_path, (img_height, img_width))
+        labelme_ann = LabelMeAnnotation(img_path, (img_height, img_width), verbose=self.verbose)
 
         for obj in root.findall('object'):
             label = obj.find('name').text
@@ -938,7 +932,8 @@ class AnnotationConverter:
         img_height, img_width = self._get_image_size(img_path)
         voc_ann = VOCAnnotation(
             image_path=img_path,
-            image_size=(img_width, img_height)
+            image_size=(img_width, img_height),
+            verbose=self.verbose
         )
 
         with open(txt_path, 'r') as f:
@@ -1003,7 +998,7 @@ class AnnotationConverter:
         img_width = int(size.find('width').text)
         img_height = int(size.find('height').text)
 
-        yolo_ann = YOLOAnnotation(self.class_names)
+        yolo_ann = YOLOAnnotation(self.class_names, verbose=self.verbose)
 
         for obj in root.findall('object'):
             label = obj.find('name').text
@@ -1056,7 +1051,7 @@ class AnnotationConverter:
 
         txt_path = os.path.join(output_dir, Path(img_path).stem + ".txt")
         with open(txt_path, 'w') as f:
-            pass # 创建空文件
+            pass  # 创建空文件
 
-        logger.info(f"创建空YOLO标签: {txt_path}")
+        self.logger.info(f"创建空YOLO标签: {txt_path}")
         return txt_path

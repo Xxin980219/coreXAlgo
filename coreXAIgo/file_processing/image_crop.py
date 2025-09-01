@@ -4,7 +4,6 @@ from tqdm import tqdm
 
 from ..utils import set_logging
 
-logger = set_logging(__name__)
 __all__ = ['resize_box_to_target', 'sliding_crop_image', 'TaggedImageCrop', 'batch_multithreaded_image_cropping']
 
 
@@ -108,7 +107,8 @@ class TaggedImageCrop:
         >>> )
     """
 
-    def __init__(self, retrain_no_detect=False, save_dir=None, target_size=None, crop_size=640, stride=320):
+    def __init__(self, retrain_no_detect=False, save_dir=None, target_size=None, crop_size=640, stride=320,
+                 verbose=False):
         """
         初始化图像裁剪处理器(基于带VOC标签格式的图片裁剪)
 
@@ -123,6 +123,7 @@ class TaggedImageCrop:
         self.target_size = target_size
         self.crop_size = crop_size
         self.stride = stride
+        self.logger = set_logging("TaggedImageCrop", verbose=verbose)
 
         # 创建保存目录
         self.save_img_dir = os.path.join(save_dir, "images")
@@ -162,10 +163,10 @@ class TaggedImageCrop:
                 annotations.append((name, box))
             return annotations
         except ET.ParseError as e:
-            logger.error(f"XML解析错误: {xml_file}, 错误: {e}")
+            self.logger.error(f"XML解析错误: {xml_file}, 错误: {e}")
             return []
         except Exception as e:
-            logger.error(f"解析XML时发生未知错误: {xml_file}, 错误: {e}")
+            self.logger.error(f"解析XML时发生未知错误: {xml_file}, 错误: {e}")
             return []
 
     def is_defect_relevant(self, defect_name, intersect, defect_area):
@@ -263,11 +264,11 @@ class TaggedImageCrop:
         """
         # 读取图像
         if not os.path.exists(image_path):
-            logger.error(f"图像文件不存在: {image_path}")
+            self.logger.error(f"图像文件不存在: {image_path}")
 
         image = cv2.imread(image_path)
         if image is None:
-            logger.error(f"无法读取图像: {image_path}")
+            self.logger.error(f"无法读取图像: {image_path}")
 
         original_size = image.shape[1], image.shape[0]
 
@@ -303,8 +304,9 @@ class TaggedImageCrop:
             self._save(crop_img, cropped_labels, image_filename, xml_filename, crop_index)
 
 
-def _single_image_cropping(args):
+def _single_image_cropping(args, verbose=False):
     """包装单张图片处理逻辑供线程池调用"""
+    logger = set_logging("single_image_cropping", verbose=verbose)
     img_path, processor = args
     xml_path = img_path.replace('.jpg', '.xml')
     try:
@@ -315,7 +317,7 @@ def _single_image_cropping(args):
         return False
 
 
-def batch_multithreaded_image_cropping(img_path_list, processor, max_workers=10):
+def batch_multithreaded_image_cropping(img_path_list, processor, max_workers=10, verbose=False):
     """
     批量多线程处理图像裁剪任务
 
@@ -331,6 +333,7 @@ def batch_multithreaded_image_cropping(img_path_list, processor, max_workers=10)
         Processing images: 100%|██████████| 3/3 [00:05<00:00, 1.67s/it]
         Completed: 3/3 (100.0%)
     """
+    logger = set_logging("batch_multithreaded_image_cropping", verbose=verbose)
     # 准备线程池参数
     task_args = [(img_path, processor) for img_path in img_path_list]
 

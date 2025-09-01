@@ -7,8 +7,6 @@ from tqdm import tqdm
 
 from ..utils import set_logging
 
-logger = set_logging(__name__)
-
 __all__ = ['get_files', 'extract_large_zip', 'zip_folder']
 
 
@@ -108,7 +106,8 @@ def get_files(directory: str, extensions: Union[str, List[str]] = '.jpg',
     return sorted(file_paths)
 
 
-def extract_large_zip(zip_path: str, extract_to: str, chunk_size: int = 8192, skip_existing: bool = True):
+def extract_large_zip(zip_path: str, extract_to: str, chunk_size: int = 8192, skip_existing: bool = True,
+                      verbose=False):
     """
     高效解压大ZIP文件
 
@@ -137,6 +136,7 @@ def extract_large_zip(zip_path: str, extract_to: str, chunk_size: int = 8192, sk
     Notes:
         - 对于特别大的ZIP文件（GB级别），建议增大chunk_size到64KB或128KB以提高性能
     """
+    logger = set_logging("extract_large_zip", verbose=verbose)
     # 验证ZIP文件
     if not os.path.isfile(zip_path):
         raise FileNotFoundError(f"ZIP文件不存在: {zip_path}")
@@ -198,7 +198,8 @@ def extract_large_zip(zip_path: str, extract_to: str, chunk_size: int = 8192, sk
 def zip_folder(folder_path: str, output_path: str, compression_level: int = 9,
                exclude_dirs: Optional[list] = None,
                exclude_exts: Optional[list] = None,
-               show_progress: bool = True
+               show_progress: bool = True,
+               verbose: bool = False
                ) -> None:
     """
     高效压缩文件夹为ZIP文件
@@ -230,6 +231,7 @@ def zip_folder(folder_path: str, output_path: str, compression_level: int = 9,
         - 排除规则基于名称匹配，区分大小写
         - 压缩大文件时建议使用压缩级别6-8，在速度和压缩率间取得平衡
     """
+    logger = set_logging("zip_folder", verbose=verbose)
     # 参数验证
     if not os.path.isdir(folder_path):
         raise FileNotFoundError(f"文件夹不存在: {folder_path}")
@@ -354,7 +356,8 @@ def get_missing_files(source_dir: str,
     return set(source_names) - set(target_names)
 
 
-def randomly_select_files(source_dir: str, file_ext: str = '.jpg', distribution: List[int] = None):
+def randomly_select_files(source_dir: str, file_ext: str = '.jpg', distribution: List[int] = None,
+                          verbose: bool = False):
     """
     从源目录按照分配到多个目标目录的数量进行随机抽取文件
 
@@ -366,6 +369,7 @@ def randomly_select_files(source_dir: str, file_ext: str = '.jpg', distribution:
     Returns:
         返回的是随机抽取的文件的路径列表
     """
+    logger = set_logging("randomly_select_files", verbose=verbose)
     # 获取源文件路径列表
     source_files = get_files(source_dir, file_ext)
 

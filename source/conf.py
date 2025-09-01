@@ -3,10 +3,9 @@ import os
 import sys
 
 sys.path.insert(0, os.path.abspath(".."))
-print("当前工作目录:", os.getcwd())
-print("src绝对路径:", os.path.abspath('../coreXAIgo'))
-print("路径是否存在:", os.path.exists(os.path.abspath('../coreXAIgo')))
-
+# print("当前工作目录:", os.getcwd())
+# print("src绝对路径:", os.path.abspath('../coreXAIgo'))
+# print("路径是否存在:", os.path.exists(os.path.abspath('../coreXAIgo')))
 
 
 # fmt: off
@@ -23,6 +22,7 @@ version = __version__
 release = __version__
 
 # -- General configuration ---------------------------------------------
+autodoc_mock_imports = ["pymysql"]  # 模拟导入，避免报错
 
 extensions = [
     "sphinx.ext.autodoc",

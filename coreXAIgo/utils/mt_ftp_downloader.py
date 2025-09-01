@@ -6,17 +6,15 @@ from ..utils import FTPClient, set_logging
 
 __all__ = ['MtFtpDownloader']
 
-# Set logger
-logger = set_logging(__name__)
-
 
 class MtFtpDownloader:
     """多线程并行下载ftp文件夹的所有文件"""
 
-    def __init__(self, workers=4):
+    def __init__(self, workers=4, verbose=False):
         self._workers = workers
         self._ftp_config = None
         self._lock = RLock()
+        self.logger = set_logging("MtFtpDownloader", verbose=verbose)
 
     def set_ftp_config(self, ftp_configs: Dict[str, dict]):
         self._ftp_config = ftp_configs
@@ -28,7 +26,7 @@ class MtFtpDownloader:
             file_list = img_path_list if ftp_dir is None else ftp.get_dir_file_list(ftp_name, ftp_dir)
 
         if not file_list:
-            logger.warning("无文件可下载")
+            self.logger.warning("无文件可下载")
             return 0
 
         if shuffle:
@@ -79,7 +77,7 @@ class MtFtpDownloader:
             try:
                 success_count += future.result()
             except Exception as e:
-                logger.error(f"线程下载异常: {str(e)}")
+                self.logger.error(f"线程下载异常: {str(e)}")
         return success_count
 
 

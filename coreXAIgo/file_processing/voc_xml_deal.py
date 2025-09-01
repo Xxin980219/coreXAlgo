@@ -6,11 +6,10 @@ from tqdm import tqdm
 
 from ..utils import set_logging
 
-logger = set_logging(__name__)
 __all__ = ['update_xml_categories', 'get_images_without_annotations', 'get_defect_classes_and_nums']
 
 
-def update_xml_categories(xml_path, source_categories, target_categories):
+def update_xml_categories(xml_path, source_categories, target_categories, verbose=False):
     """
     更新XML标注文件中的类别名称(用于修改PASCAL VOC格式XML标注文件)
 
@@ -30,6 +29,8 @@ def update_xml_categories(xml_path, source_categories, target_categories):
         >>> for xml_file in glob.glob('annotations/*.xml'):
         >>>     update_xml_categories(xml_file, ['old_class'], ['new_class'])
     """
+    logger = set_logging("update_xml_categories", verbose=verbose)
+
     if not os.path.exists(xml_path):
         raise FileNotFoundError(f"XML file not found: {xml_path}")
 
@@ -55,7 +56,7 @@ def update_xml_categories(xml_path, source_categories, target_categories):
             raise IOError(f"Failed to write XML file: {e}")
 
 
-def get_images_without_annotations(xml_path):
+def get_images_without_annotations(xml_path, verbose=False):
     """
     提取XML文件中无标注的图片（不含扩展名）
 
@@ -80,6 +81,7 @@ def get_images_without_annotations(xml_path):
         >>>     if result:
         >>>         empty_files.append(result)
     """
+    logger = set_logging("get_images_without_annotations", verbose=verbose)
     try:
         # 解析 XML 文件
         tree = ET.parse(xml_path)
@@ -93,7 +95,7 @@ def get_images_without_annotations(xml_path):
         return None
 
 
-def get_defect_classes_and_nums(xml_dir):
+def get_defect_classes_and_nums(xml_dir, verbose=False):
     """
     从XML标注文件中提取所有缺陷类别及其出现次数统计
 
@@ -113,6 +115,8 @@ def get_defect_classes_and_nums(xml_dir):
         >>> for class_name, count in stats.items():
         >>>     print(f"  {class_name}: {count}")
     """
+    logger = set_logging("get_images_without_annotations", verbose=verbose)
+
     classes_and_nums = {}
     from .basic import get_files
     xml_file_paths = get_files(xml_dir, '.xml')
@@ -137,7 +141,7 @@ def get_defect_classes_and_nums(xml_dir):
     return classes_and_nums
 
 
-def get_images_with_specific_categories(xml_path, target_categories):
+def get_images_with_specific_categories(xml_path, target_categories,verbose=False):
     """
     提取XML文件中仅包含指定类别的图片（不含扩展名）
 
@@ -158,6 +162,7 @@ def get_images_with_specific_categories(xml_path, target_categories):
         >>> # 查找包含'person'或'car'类别的图片
         >>> result = get_images_with_specific_categories('image.xml', ['person', 'car'])
     """
+    logger = set_logging("get_images_without_annotations", verbose=verbose)
     try:
         if isinstance(target_categories, str):
             target_categories_set = {target_categories}
