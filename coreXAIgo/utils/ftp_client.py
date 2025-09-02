@@ -11,9 +11,6 @@ from ..utils import set_logging
 
 __all__ = ['FTPClient']
 
-# Set logger
-logger = set_logging(__name__)
-
 
 def _ftp_block_callback(file_size, percent_callback=None, size_callback=None, process_block=None):
     """ load/upload block callback
@@ -46,7 +43,7 @@ class FTPClient:
     TIMEOUT = 5
     RETRY_TIMES = 3
 
-    def __init__(self, ftp_configs: Dict[str, dict]):
+    def __init__(self, ftp_configs: Dict[str, dict], verbose=False):
         """
         初始化FTP客户端
         :param ftp_configs: ftp配置字典 {ftp_name: {host,port,username,password,...}}
@@ -54,6 +51,7 @@ class FTPClient:
         self._configs = ftp_configs
         self._ftp = None
         self.ftp_name = None
+        self.logger = set_logging("FTPClient", verbose=verbose)
 
     def _ftpconnect(self, ftp_name=None, debug_level=0):
         """
@@ -106,7 +104,8 @@ class FTPClient:
             except error_proto as e:
                 raise RuntimeError(f"模式设置失败: {e}")
 
-            logger.info(f"✅ 成功连接到FTP: {self.ftp_name} (模式: {'PASV' if self._ftp.passiveserver else 'PORT'})")
+            self.logger.info(
+                f"✅ 成功连接到FTP: {self.ftp_name} (模式: {'PASV' if self._ftp.passiveserver else 'PORT'})")
             return self._ftp
 
         except all_errors as e:
@@ -153,10 +152,10 @@ class FTPClient:
                 if self._ftp:
                     return operation()
             except error_perm as e:
-                logger.warning('FTP权限错误: %s', str(e))
+                self.logger.warning('FTP权限错误: %s', str(e))
                 return None
             except Exception as e:
-                logger.warning('FTP操作异常: %s', str(e))
+                self.logger.warning('FTP操作异常: %s', str(e))
             time.sleep(self.TIMEOUT ** (retry + 1))
             self._ftp_reconnect()
         return None
@@ -225,7 +224,7 @@ class FTPClient:
             # 获取文件大小
             file_size = self._ftp.size(remote_path)
             if not file_size:
-                logger.error("无法获取远程文件大小")
+                self.logger.error("无法获取远程文件大小")
                 return False
 
             # 检查断点续传（本地已下载部分）
@@ -233,23 +232,23 @@ class FTPClient:
             if os.path.exists(local_path):
                 local_size = os.path.getsize(local_path)
                 if local_size == file_size:
-                    logger.info(f"🔄 文件已存在且完整，跳过下载: {local_path}")
+                    self.logger.info(f"🔄 文件已存在且完整，跳过下载: {local_path}")
                     return
                 elif 0 < local_size < file_size:
-                    logger.info(f"⏩ 检测到部分下载文件，尝试从字节 {local_size} 续传")
+                    self.logger.info(f"⏩ 检测到部分下载文件，尝试从字节 {local_size} 续传")
                     downloaded = local_size
                     try:
                         self._ftp.voidcmd(f"REST {local_size}")  # FTP断点续传命令
                     except error_reply as e:
                         if "350" not in str(e):
-                            logger.warning("⚠️ 续传协商失败，重新下载")
+                            self.logger.warning("⚠️ 续传协商失败，重新下载")
                             os.remove(local_path)
                             downloaded = 0
 
             with open(local_path, 'ab' if downloaded > 0 else 'wb') as f:
                 # 定义下载回调
                 callback = _ftp_block_callback(
-                    file_size=file_size-downloaded,
+                    file_size=file_size - downloaded,
                     percent_callback=None,
                     size_callback=progress_callback,
                     process_block=f.write
@@ -261,12 +260,12 @@ class FTPClient:
                 os.remove(local_path)  # 删除不完整文件
                 raise RuntimeError(f"下载不完整: {downloaded}/{file_size}字节")
 
-            logger.info(f"✅ 文件已保存至: {local_path}")
+            self.logger.info(f"✅ 文件已保存至: {local_path}")
             return True
         except Exception as e:
             if os.path.exists(local_path):
                 os.remove(local_path)  # 清理残留文件
-            logger.error(f"❌ 下载失败: {e}")
+            self.logger.error(f"❌ 下载失败: {e}")
             return False
         finally:
             self.close()
@@ -317,7 +316,7 @@ class FTPClient:
                     fp.seek(uploaded)  # 跳转到续传位置
 
                     callback = _ftp_block_callback(
-                        file_size=file_size-uploaded,
+                        file_size=file_size - uploaded,
                         percent_callback=None,
                         size_callback=progress_callback,
                         process_block=None
@@ -341,11 +340,11 @@ class FTPClient:
             if uploaded != file_size:
                 raise RuntimeError(f"上传不完整: {uploaded}/{file_size}字节")
 
-            logger.info(f"✅ 文件已上传至: {remote_path}")
+            self.logger.info(f"✅ 文件已上传至: {remote_path}")
             return True
 
         except Exception as e:
-            logger.error(f"❌ 下载失败: {e}")
+            self.logger.error(f"❌ 下载失败: {e}")
             return False
         finally:
             self.close()
@@ -392,7 +391,7 @@ class FTPClient:
                     # 获取文件大小
                     file_size = self._ftp.size(file)
                     if not file_size:
-                        logger.error(f"无法获取远程文件大小: {filename}")
+                        self.logger.error(f"无法获取远程文件大小: {filename}")
                         continue
 
                     # 检查断点续传（本地已下载部分）
@@ -400,20 +399,20 @@ class FTPClient:
                     if os.path.exists(local_path):
                         local_size = os.path.getsize(local_path)
                         if local_size == file_size:
-                            logger.info(f"🔄 文件已存在且完整，跳过下载: {local_path}")
+                            self.logger.info(f"🔄 文件已存在且完整，跳过下载: {local_path}")
                             success_count += 1
                             if progress_callback:
                                 progress_callback(int(100 * i / total_files))
                             continue
                         elif 0 < local_size < file_size:
-                            logger.info(
+                            self.logger.info(
                                 f"⏩ 检测到部分下载文件，尝试续传: {filename} ({local_size}/{file_size} bytes)")
                             downloaded = local_size
                             try:
                                 self._ftp.voidcmd(f"REST {local_size}")  # FTP断点续传命令
                             except error_reply as e:
                                 if "350" not in str(e):
-                                    logger.warning("⚠️ 续传协商失败，重新下载")
+                                    self.logger.warning("⚠️ 续传协商失败，重新下载")
                                     os.remove(local_path)
                                     downloaded = 0
 
@@ -427,7 +426,7 @@ class FTPClient:
 
                         # 定义下载回调
                         callback = _ftp_block_callback(
-                            file_size=file_size-downloaded,
+                            file_size=file_size - downloaded,
                             percent_callback=_update_progress,
                             process_block=f.write
                         )
@@ -439,11 +438,11 @@ class FTPClient:
                         raise RuntimeError(f"下载不完整: {downloaded}/{file_size}字节")
 
                     success_count += 1
-                    logger.info(f"✅ 下载成功，文件已保存至: {local_path}")
+                    self.logger.info(f"✅ 下载成功，文件已保存至: {local_path}")
                 except Exception as e:
                     if os.path.exists(local_path):
                         os.remove(local_path)  # 清理残留文件
-                    logger.error(f"❌ 下载失败:  {filename}: {str(e)}")
+                    self.logger.error(f"❌ 下载失败:  {filename}: {str(e)}")
                 finally:
                     # 更新进度（即使失败也计数）
                     if progress_callback:
@@ -454,32 +453,3 @@ class FTPClient:
         finally:
             # 全部完成后才关闭连接
             self.close()
-
-
-if __name__ == '__main__':
-    ftp_configs = {
-        "155": {
-            "host": "10.141.70.155",
-            "port": 21,
-            "username": "root",
-            "password": "admin@boe"
-        },
-        "169": {
-            "host": "10.141.70.155",
-            "port": 21,
-            "username": "root",
-            "password": "admin@boe"
-        }
-    }
-    ftp = FTPClient(ftp_configs)
-
-    ftp.download_file_visualization(
-        ftp_name='155',
-        remote_path="/TspMuraTest/2025/04280628/TB5000N.zip",
-        local_path="B3.zip"
-    )
-
-    # ftp.upload_file("155",
-    #                 remotepath="/TspMuraTest/2025/04280628/B3.zip",
-    #                 localpath="B3.zip",
-    #                 bufsize=1024)
