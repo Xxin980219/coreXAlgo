@@ -51,10 +51,10 @@ def sliding_crop_image(img, crop_size=None, stride=None):
         stride: 滑动步长
 
     Returns:
-    list: 包含裁剪图像块及其坐标信息的列表，每个元素为 [crop_img, x, y]
-        - crop_img: 裁剪出的图像块，numpy数组
-        - x: 该图像块在原图中的左上角x坐标
-        - y: 该图像块在原图中的左上角y坐标
+        list: 包含裁剪图像块及其坐标信息的列表，每个元素为 [crop_img, x, y]
+            - crop_img: 裁剪出的图像块，numpy数组
+            - x: 该图像块在原图中的左上角x坐标
+            - y: 该图像块在原图中的左上角y坐标
 
      Example:
         >>> import numpy as np
