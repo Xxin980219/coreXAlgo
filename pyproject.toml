@@ -5,12 +5,13 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 # 添加 Hatch 版本配置
-[tool.hatch.version]
-path = "coreXAlgo/__init__.py"
+# [tool.hatch.version]
+# path = "coreXAlgo/__init__.py"
 
 [project]
 name = "coreXAlgo"
-dynamic = ["version"]
+# dynamic = ["version"]
+version = "2.0.0"  # 直接指定版本号
 description = "coreXAlgo - CoreX Algorithm Library"
 requires-python = ">=3.10"
 authors = [{ name = "Xiong Xin" }]
