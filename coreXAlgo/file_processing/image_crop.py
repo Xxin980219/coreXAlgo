@@ -331,9 +331,9 @@ def batch_multithreaded_image_cropping(img_path_list, processor, max_workers=10,
     批量多线程处理图像裁剪任务
 
     Args:
-    img_path_list: 待处理的图片路径列表，每个元素为图片的完整文件路径
-    processor: 包含crop_image_and_labels方法的处理器实例
-    max_workers: 最大线程数（建议设为CPU核心数*2）
+        img_path_list: 待处理的图片路径列表，每个元素为图片的完整文件路径
+        processor: 包含crop_image_and_labels方法的处理器实例
+        max_workers: 最大线程数（建议设为CPU核心数*2）
 
     Example:
         >>> processor = TaggedImageCrop(...)
@@ -359,3 +359,4 @@ def batch_multithreaded_image_cropping(img_path_list, processor, max_workers=10,
     success_count = sum(results)
     logger.info(
         f"\nCompleted: {success_count}/{len(img_path_list)} ({(success_count / len(img_path_list)) * 100:.1f}%)")
+
