@@ -8,7 +8,7 @@ import yaml
 from tqdm import tqdm
 
 __all__ = ['colorstr', 'set_all_seed', 'set_logging', 'print_gpu_memory', 'set_gpu_visible', 'obj_to_json',
-           'obj_from_json', 'obj_to_yaml', 'obj_from_yaml', 'obj_to_pkl', 'obj_from_pkl']
+           'obj_from_json', 'obj_to_yaml', 'obj_from_yaml', 'obj_to_pkl', 'obj_from_pkl', 'thread_pool']
 
 
 def colorstr(*input):

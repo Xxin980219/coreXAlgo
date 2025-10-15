@@ -7,7 +7,8 @@ from tqdm import tqdm
 
 from ..utils import set_logging
 
-__all__ = ['get_files', 'extract_large_zip', 'zip_folder']
+__all__ = ['get_files', 'get_filenames', 'extract_large_zip', 'zip_folder', 'copy_file', 'move_file',
+           'get_missing_files', 'randomly_select_files']
 
 
 def get_files(directory: str, extensions: Union[str, List[str]] = '.jpg',
@@ -104,6 +105,74 @@ def get_files(directory: str, extensions: Union[str, List[str]] = '.jpg',
 
     # 返回排序后的列表以便可预测的顺序
     return sorted(file_paths)
+
+
+def get_filenames(directory: str, extensions: Union[str, List[str]] = '.jpg',
+                  exclude_dirs: Union[str, List[str]] = None) -> List[str]:
+    """
+    查找指定目录下所有匹配给定扩展名的文件名（不包含路径）
+
+    Args:
+        directory: 要搜索的目录路径
+        extensions: 要匹配的文件扩展名，可以是单个字符串（如 '.jpg'）或列表（如 ['.jpg', '.png']）
+        exclude_dirs: 要排除的目录名，可以是单个字符串或列表（支持相对路径或绝对路径）
+
+    Returns:
+        匹配文件的文件名列表（按字母顺序排序）
+
+    Example:
+        >>> # 查找所有jpg文件名
+        >>> jpg_files = get_files('./images', '.jpg')
+        >>> print(f"找到 {len(jpg_files)} 个JPG文件")
+        >>> # 输出示例: ['cat.jpg', 'dog.jpg']
+    """
+    # 参数验证（与原函数相同）
+    if not os.path.isdir(directory):
+        raise ValueError(f"无效的目录路径: {directory}")
+
+    if not isinstance(extensions, (str, list)):
+        raise TypeError("扩展名参数必须是字符串或列表")
+
+    if exclude_dirs is None:
+        exclude_dirs = []
+    elif isinstance(exclude_dirs, str):
+        exclude_dirs = [exclude_dirs]
+    elif not isinstance(exclude_dirs, list):
+        raise TypeError("排除目录参数必须是字符串、列表或None")
+
+    # 统一处理扩展名格式
+    if isinstance(extensions, str):
+        extensions = [extensions]
+    extensions = [ext if ext.startswith('.') else f'.{ext}' for ext in extensions]
+
+    # 规范化排除目录路径
+    normalized_exclude_dirs = []
+    for exclude_dir in exclude_dirs:
+        if not os.path.isabs(exclude_dir):
+            exclude_dir = os.path.abspath(os.path.join(directory, exclude_dir))
+        normalized_exclude_dirs.append(os.path.normpath(exclude_dir))
+
+    # 收集文件名（不包含路径）
+    file_names = []
+    for root, dirs, files in os.walk(directory):
+        # 检查是否在排除目录中
+        current_dir_abs = os.path.abspath(root)
+        if any(os.path.samefile(current_dir_abs, exclude_dir) for exclude_dir in normalized_exclude_dirs):
+            dirs[:] = []
+            continue
+
+        # 检查父目录是否在排除列表中
+        for exclude_dir in normalized_exclude_dirs:
+            if current_dir_abs.startswith(exclude_dir + os.sep):
+                dirs[:] = []
+                continue
+
+        # 收集匹配的文件名
+        for file in files:
+            if any(file.lower().endswith(ext.lower()) for ext in extensions):
+                file_names.append(file)  # 只添加文件名，不包含路径
+
+    return sorted(file_names)
 
 
 def extract_large_zip(zip_path: str, extract_to: str, chunk_size: int = 8192, skip_existing: bool = True,
@@ -310,19 +379,17 @@ def zip_folder(folder_path: str, output_path: str, compression_level: int = 9,
 
 
 def copy_file(copy_file_path, copy_des_path):
-    """ 单个文件拷贝 """
+    """单个文件拷贝 (以具体名字拷贝到具体路径)"""
     root_path = os.path.dirname(copy_des_path)
-    if not os.path.exists(root_path):
-        os.makedirs(root_path, exist_ok=True)
+    os.makedirs(root_path, exist_ok=True)
     shutil.copy(copy_file_path, copy_des_path)
     return True
 
 
 def move_file(move_file_path, move_des_path):
-    """ 单个文件移动 """
+    """单个文件移动 (以具体名字移动到具体路径)"""
     root_path = os.path.dirname(move_des_path)
-    if not os.path.exists(root_path):
-        os.makedirs(root_path, exist_ok=True)
+    os.makedirs(root_path, exist_ok=True)
     shutil.move(move_file_path, move_des_path)
     return True
 

@@ -86,40 +86,61 @@ class TaggedImageCrop:
 
     Attributes:
         retrain_no_detect (bool): 是否保留没有目标的裁剪块
-        save_dir (str): 保存目录
+        separate_ok_ng (bool): 是否将OK（无缺陷）和NG（有缺陷）图像分开保存
+        save_dir (str): 保存目录路径
         target_size (Tuple[int, int]): 裁剪前图像缩放目标尺寸 (width, height)
         crop_size (int): 裁剪窗口大小（正方形）
         stride (int): 滑动步长
+        verbose (bool): 是否显示详细日志
+
     Example:
-        >>> # 初始化裁剪处理器
+        >>> # 基本用法：仅裁剪有缺陷的区域
         >>> processor = TaggedImageCrop(
-        >>>     retrain_no_detect=True,          # 保留无目标图像块
-        >>>     save_dir="./output_crops",       # 输出目录
-        >>>     target_size=(2000, 1500),        # 先缩放到2000x1500
-        >>>     crop_size=640,                   # 裁剪为640x640块
-        >>>     stride=320                       # 50%重叠率
+        >>>     retrain_no_detect=False,          # 不保留无缺陷图像块
+        >>>     save_dir="./output",              # 输出目录
+        >>>     crop_size=640,                    # 裁剪为640x640块
+        >>>     stride=320                        # 50%重叠率
         >>> )
+        >>> stats = processor.crop_image_and_labels("image.jpg", "annotation.xml")
         >>>
-        >>> # 处理单张图像和对应的标注文件
-        >>> processor.crop_image_and_labels(
-        >>>     "images/defect_001.jpg",
-        >>>     "annotations/defect_001.xml"
+        >>> # 高级用法：包含正负样本，分开保存
+        >>> processor = TaggedImageCrop(
+        >>>     retrain_no_detect=True,           # 保留无缺陷图像块
+        >>>     separate_ok_ng=True,              # OK和NG图像分开保存
+        >>>     save_dir="./dataset",             # 输出目录
+        >>>     target_size=(2000, 1500),        # 先缩放到2000x1500
+        >>>     crop_size=640,                    # 裁剪尺寸
+        >>>     stride=320,                       # 滑动步长
+        >>>     verbose=True                      # 显示详细日志
         >>> )
+        >>> stats = processor.crop_image_and_labels("defect_image.jpg", "defect_annotation.xml")
+        >>> print(f"总裁剪块: {stats['total_crops']}, NG块: {stats['ng_crops']}, OK块: {stats['ok_crops']}")
     """
 
-    def __init__(self, retrain_no_detect=False, save_dir=None, target_size=None, crop_size=640, stride=320,
-                 verbose=False):
+    def __init__(self, retrain_no_detect=False, separate_ok_ng=False, save_dir=None, target_size=None, crop_size=640,
+                 stride=320, verbose=False):
         """
-        初始化图像裁剪处理器(基于带VOC标签格式的图片裁剪)
+        初始化图像裁剪处理器
 
         Args:
-            retrain_no_detect: 是否保留裁剪的没有缺陷的图片块
-            save_dir: 保存目录
-            target_size: 裁剪前图像缩放大小，None表示不进行缩放处理,(w,h)
-            crop_size: 裁剪窗口大小
-            stride: 滑动步长
+            retrain_no_detect (bool): 是否保留裁剪的没有缺陷的图片块
+                - True: 保留所有裁剪块（包括无缺陷的）
+                - False: 只保留包含缺陷的裁剪块
+            separate_ok_ng (bool): 是否将OK和NG图像区分保存
+                - True: OK图像保存到ok_images目录，NG图像保存到images目录
+                - False: 所有图像都保存到images目录
+            save_dir (str): 保存目录路径，如果为None则不保存
+            target_size (Tuple[int, int]): 裁剪前图像缩放大小，格式为(width, height)
+                - None: 不进行缩放处理
+                - (w, h): 缩放到指定尺寸
+            crop_size (int): 裁剪窗口大小（正方形）
+            stride (int): 滑动步长，控制裁剪块的重叠率
+                - stride = crop_size: 无重叠
+                - stride < crop_size: 有重叠（如stride=320，crop_size=640，重叠50%）
+            verbose (bool): 是否显示详细日志信息
         """
         self.retrain_no_detect = retrain_no_detect
+        self.separate_ok_ng = separate_ok_ng
         self.target_size = target_size
         self.crop_size = crop_size
         self.stride = stride
@@ -136,7 +157,7 @@ class TaggedImageCrop:
         """创建必要的目录结构"""
         os.makedirs(self.save_img_dir, exist_ok=True)
         os.makedirs(self.save_xml_dir, exist_ok=True)
-        if self.retrain_no_detect:
+        if self.retrain_no_detect and self.separate_ok_ng:
             os.makedirs(self.save_ok_img_dir, exist_ok=True)
 
     def _parse_xml(self, xml_file, original_size):
@@ -159,7 +180,7 @@ class TaggedImageCrop:
                 if self.target_size:
                     box = resize_box_to_target(box, self.target_size, original_size)
                 if name.endswith('U4U'):
-                    box = [1, 1, original_size[0] - 1, original_size[1] - 1]
+                    box = [1, 1, int(original_size[0]) - 1, int(original_size[1]) - 1]
                 annotations.append((name, box))
             return annotations
         except ET.ParseError as e:
@@ -209,31 +230,40 @@ class TaggedImageCrop:
                         new_annotations.append((name, new_xmin, new_ymin, new_xmax, new_ymax))
         return new_annotations
 
-    def _save(self, crop_image, cropped_labels, image_filename, xml_filename, crop_index):
+    def _save(self, crop_image, cropped_labels, base_filename, crop_index):
         """保存裁剪后的图像和标签"""
         # 保存裁剪后的图像
-        if not cropped_labels and self.retrain_no_detect:
-            save_dir = self.save_ok_img_dir
-            suffix = '_ok'
-        else:
-            save_dir = self.save_img_dir
-            suffix = ''
-        crop_image_filename = os.path.join(save_dir, f"{image_filename}{suffix}_{crop_index}.jpg")
-
-        cv2.imwrite(crop_image_filename, crop_image)
+        img_filename = f"{base_filename}_{crop_index}.jpg"
+        img_save_path = self.save_ok_img_dir if (not cropped_labels and self.separate_ok_ng) else self.save_img_dir
+        cv2.imwrite(os.path.join(img_save_path, img_filename), crop_image)
 
         # 保存XML文件
         if cropped_labels:
-            xml_save_path = os.path.join(self.save_xml_dir, f"{xml_filename}_{crop_index}.xml")
+            xml_save_path = os.path.join(self.save_xml_dir, f"{base_filename}_{crop_index}.xml")
 
             from .annotation_convert import VOCAnnotation
-            voc_ann = VOCAnnotation(xml_filename, image_size=(self.crop_size, self.crop_size))
+            voc_ann = VOCAnnotation(img_save_path, image_size=(self.crop_size, self.crop_size))
             for label in cropped_labels:
                 voc_ann.add_object(
                     name=label[0],
                     bbox=[float(label[1]), float(label[2]), float(label[3]), float(label[4])]
                 )
             voc_ann.save(xml_save_path)
+
+    def _process_image(self, image_path):
+        """读取并预处理图像"""
+        # 读取图像
+        if not os.path.exists(image_path):
+            self.logger.error(f"图像文件不存在: {image_path}")
+
+        image = cv2.imread(image_path)
+        if image is None:
+            self.logger.error(f"无法读取图像: {image_path}")
+        original_size = image.shape[:2][::-1]
+
+        if self.target_size:
+            image = cv2.resize(image, self.target_size, interpolation=cv2.INTER_LINEAR)
+        return image, original_size
 
     def crop_image_and_labels(self, image_path, xml_path):
         """
@@ -263,54 +293,35 @@ class TaggedImageCrop:
             >>> #   └── xmls/           # 对应的VOC标注文件
         """
         # 读取图像
-        if not os.path.exists(image_path):
-            self.logger.error(f"图像文件不存在: {image_path}")
+        global annotations
+        image,original_size = self._process_image(image_path)
 
-        image = cv2.imread(image_path)
-        if image is None:
-            self.logger.error(f"无法读取图像: {image_path}")
-
-        original_size = image.shape[1], image.shape[0]
-
-        # 缩放图像
-        if self.target_size:
-            image = cv2.resize(image, self.target_size, interpolation=cv2.INTER_LINEAR)
-
-        # 解析XML标签
-        annotations = self._parse_xml(xml_path, original_size)
-
+        if xml_path is not None:
+            # 解析XML标签
+            annotations = self._parse_xml(xml_path)
         # 获取文件名
-        image_filename = os.path.splitext(os.path.basename(image_path))[0]
-        xml_filename = os.path.splitext(os.path.basename(xml_path))[0]
-
-        ng_crop_index, ok_crop_index, crop_index = 0, 0, 0
+        base_name = os.path.splitext(os.path.basename(image_path))[0]
 
         # 对图像进行裁剪
         crops = sliding_crop_image(image, self.crop_size, self.stride)
-        for crop_img, x_offset, y_offset in crops:
+        for idx, crop in enumerate(crops):
+            cropped_image = crop[0]
             # 更新标签
-            cropped_labels = self._update_labels_for_crop(annotations, x_offset, y_offset, self.crop_size)
+            cropped_labels = self._update_labels_for_crop(annotations, crop[1], crop[2],
+                                                          self.crop_size) if xml_path is not None else None
 
-            if cropped_labels:
-                ng_crop_index += 1
-                crop_index = ng_crop_index
-            elif not cropped_labels and self.retrain_no_detect:
-                ok_crop_index += 1
-                crop_index = ok_crop_index
-            else:
-                continue
-
-            # 保存裁剪后的图像和标签
-            self._save(crop_img, cropped_labels, image_filename, xml_filename, crop_index)
+            if cropped_labels is not None or self.retrain_no_detect:
+                self._save(cropped_image, cropped_labels, base_name, idx)
 
 
 def _single_image_cropping(args, verbose=False):
     """包装单张图片处理逻辑供线程池调用"""
     logger = set_logging("single_image_cropping", verbose=verbose)
     img_path, processor = args
-    xml_path = img_path.replace('.jpg', '.xml')
+    xml_path = os.path.splitext(img_path)[0] + '.xml'
+    xml_path = xml_path if os.path.exists(xml_path) else None
     try:
-        processor.crop_image_and_labels(img_path, xml_path)
+        processor(img_path, xml_path)
         return True
     except Exception as e:
         logger.error(f"Error processing {img_path}: {str(e)}")
@@ -338,7 +349,7 @@ def batch_multithreaded_image_cropping(img_path_list, processor, max_workers=10,
     task_args = [(img_path, processor) for img_path in img_path_list]
 
     import concurrent.futures
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+    with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
         # 使用tqdm显示进度条
         results = list(tqdm(
             executor.map(_single_image_cropping, task_args),

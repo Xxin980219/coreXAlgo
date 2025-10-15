@@ -1,6 +1,6 @@
-# coreXAIgo.utils.mt_db_client
+# coreXAlgo.utils.mt_db_client
 
-[coreXAIgo.utils.mt_db_client]() 轻量级多数据库查询客户端
+[coreXAlgo.utils.mt_db_client](``) 轻量级多数据库查询客户端
 
 ```{eval-rst}
 .. automodule:: coreXAIgo.utils.mt_db_client

@@ -1,6 +1,6 @@
-# coreXAIgo.utils.basic
+# coreXAlgo.utils.basic
 
-[coreXAIgo.utils.basic]() 基础函数
+[coreXAlgo.utils.basic](``) 基础函数
 
 ```{eval-rst}
 .. automodule:: coreXAIgo.utils.basic

@@ -4,8 +4,8 @@ import sys
 
 sys.path.insert(0, os.path.abspath(".."))
 # print("当前工作目录:", os.getcwd())
-# print("src绝对路径:", os.path.abspath('../coreXAIgo'))
-# print("路径是否存在:", os.path.exists(os.path.abspath('../coreXAIgo')))
+# print("src绝对路径:", os.path.abspath('../corexAlgo'))
+# print("路径是否存在:", os.path.exists(os.path.abspath('../corexAlgo')))
 
 
 # fmt: off
@@ -13,7 +13,7 @@ __version__ = '0.2.0'
 # fmt: on
 
 # -- Project information -----------------------------------------------------
-project = 'coreXAIgo'
+project = 'coreXAlgo'
 copyright = '2025, Xiong xin'
 author = 'Xiong xin'
 
@@ -73,9 +73,9 @@ html_static_path = ['_static']
 html_theme_options = {}
 
 # Output file base name for HTML help builder.
-htmlhelp_basename = "coreXAIgo"
+htmlhelp_basename = "coreXAlgo"
 # 可选：修改 html_title 来控制浏览器标签页标题
-html_title = 'coreXAIgo Documentation'
+html_title = 'coreXAlgo Documentation'
 
 # -- Options for LaTeX output ------------------------------------------
 
@@ -100,8 +100,8 @@ latex_elements = {
 latex_documents = [
     (
         master_doc,
-        "corexAIgo.tex",
-        "corexAIgo Documentation",
+        "corexAlgo.tex",
+        "corexAlgo Documentation",
         author,
         "manual",
     ),
@@ -111,7 +111,7 @@ latex_documents = [
 
 # One entry per manual page. List of tuples
 # (source start file, name, description, authors, manual section).
-man_pages = [(master_doc, "corexAIgo", "corexAIgo Documentation", [author], 1)]
+man_pages = [(master_doc, "corexAlgo", "corexAlgo Documentation", [author], 1)]
 
 # -- Options for Texinfo output ----------------------------------------
 
@@ -121,10 +121,10 @@ man_pages = [(master_doc, "corexAIgo", "corexAIgo Documentation", [author], 1)]
 texinfo_documents = [
     (
         master_doc,
-        "corexAIgo",
-        "corexAIgo Documentation",
+        "corexAlgo",
+        "corexAlgo Documentation",
         author,
-        "corexAIgo",
+        "corexAlgo",
         "One line description of project.",
         "Miscellaneous",
     ),

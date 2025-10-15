@@ -1,6 +1,6 @@
-# coreXAIgo.utils.mt_ftp_downloader
+# coreXAlgo.utils.mt_ftp_downloader
 
-[coreXAIgo.utils.mt_ftp_downloader]() 多线程并行下载ftp文件夹的所有文件
+[coreXAlgo.utils.mt_ftp_downloader](``) 多线程并行下载ftp文件夹的所有文件
 
 ```{eval-rst}
 .. automodule:: coreXAIgo.utils.mt_ftp_downloader
