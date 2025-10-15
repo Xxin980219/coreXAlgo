@@ -4,6 +4,10 @@
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+# 添加 Hatch 版本配置
+[tool.hatch.version]
+path = "src/coreXAlgo/__init__.py"
+
 [project]
 name = "coreXAlgo"
 dynamic = ["version"]
@@ -378,6 +382,23 @@ module = ["torch.*", "wandb.*"]
 follow_imports = "skip"
 follow_imports_for_stubs = true
 
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# BANDIT CONFIGURATION                                                        #
+[tool.bandit]
+skips = ["B101"]
+exclude_dirs = ["tests"]
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# PYTEST CONFIGURATION                                                        #
+[tool.pytest.ini_options]
+addopts = ["--strict-markers", "--strict-config", "--showlocals", "-ra"]
+testpaths = "tests"
+pythonpath = "src"
+markers = [
+    "gpu: marks tests that require GPU",
+    "cpu: marks tests that can run on CPU only (default)",
+]
 
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
