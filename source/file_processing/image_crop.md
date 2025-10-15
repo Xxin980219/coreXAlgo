@@ -1,6 +1,6 @@
-# coreXAlgo.file_processing.image_crop
+# Image_crop
 
-[coreXAlgo.file_processing.image_crop](``) 图像裁剪
+图像裁剪
 
 ```{eval-rst}
 .. automodule:: coreXAlgo.file_processing.image_crop

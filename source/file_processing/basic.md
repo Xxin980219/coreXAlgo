@@ -1,6 +1,6 @@
-# coreXAlgo.file_processing.basic
+# Basic
 
-[coreXAlgo.file_processing.basic](``) 基础函数
+基础函数
 
 ```{eval-rst}
 .. automodule:: coreXAlgo.file_processing.basic

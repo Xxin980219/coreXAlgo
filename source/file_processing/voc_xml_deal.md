@@ -1,6 +1,6 @@
-# coreXAlgo.file_processing.voc_xml_deal
+# Voc_xml_deal
 
-[coreXAlgo.file_processing.voc_xml_deal](``) xml文件处理
+xml文件处理
 
 ```{eval-rst}
 .. automodule:: coreXAlgo.file_processing.voc_xml_deal

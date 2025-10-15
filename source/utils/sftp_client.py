@@ -1,9 +1,9 @@
 # Ftp_client
 
-FTP客户端下载和上传
+SFTP客户端下载和上传
 
 ```{eval-rst}
-.. automodule:: coreXAlgo.utils.ftp_client
+.. automodule:: coreXAlgo.utils.sftp_client
    :members:
    :undoc-members:
    :show-inheritance:

@@ -1,9 +1,9 @@
-# coreXAlgo.utils.basic
+# Basic
 
-[coreXAlgo.utils.basic](``) 基础函数
+基础函数
 
 ```{eval-rst}
-.. automodule:: coreXAIgo.utils.basic
+.. automodule:: coreXAlgo.utils.basic
    :members:
    :undoc-members:
    :show-inheritance:

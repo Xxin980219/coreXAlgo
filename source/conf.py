@@ -1,135 +1,93 @@
 #!/usr/bin/env python
 import os
 import sys
+from pathlib import Path
 
-sys.path.insert(0, os.path.abspath(".."))
-# print("当前工作目录:", os.getcwd())
-# print("src绝对路径:", os.path.abspath('../corexAlgo'))
-# print("路径是否存在:", os.path.exists(os.path.abspath('../corexAlgo')))
+# Define paths
+project_root = Path(__file__).parent.parent
 
-
-# fmt: off
-__version__ = '0.2.0'
-# fmt: on
+# Insert paths to sys.path
+sys.path.insert(0, str(project_root.resolve()))
 
 # -- Project information -----------------------------------------------------
 project = 'coreXAlgo'
 copyright = '2025, Xiong xin'
 author = 'Xiong xin'
 
-version = __version__
-release = __version__
-
 # -- General configuration ---------------------------------------------
-autodoc_mock_imports = ["pymysql", "torch", "cv2", "numpy", "tqdm"]  # 模拟导入，避免报错
+autodoc_mock_imports = ["pymysql", "torch", "cv2", "numpy", "tqdm", "pandas", "paramiko"]  # 模拟导入，避免报错
 
 extensions = [
     "sphinx.ext.autodoc",
-    # "sphinx.ext.viewcode",
-    # 支持 Google/NumPy 风格的文档字符串
-    "sphinx.ext.napoleon",
-    # myst 解析器
+    "sphinx.ext.mathjax",
+    "sphinx_design",
     "myst_parser",
-    # 代码块复制按钮扩展
+    "nbsphinx",
+    "sphinx.ext.napoleon",
+    "sphinx_autodoc_typehints",
     "sphinx_copybutton",
-    # tab 面板插件
-    'sphinx_tabs.tabs',
-    # 折叠警告（注释、警告等）的功能按钮
-    "sphinx_togglebutton",
+    "sphinx.ext.intersphinx",
+    "sphinx.ext.autosectionlabel",
 ]
 
-# 自动为所有模块生成文档
-autosummary_generate = True
+# MyST configuration
+myst_enable_extensions = [
+    "colon_fence",
+    "linkify",
+    "substitution",
+    "tasklist",
+    "deflist",
+    "fieldlist",
+    "amsmath",
+    "dollarmath",
+]
 
+# Add separate setting for eval-rst
+myst_enable_eval_rst = True
+
+# Notebook handling
+nbsphinx_allow_errors = True
+nbsphinx_execute = "auto"  # Execute notebooks during build
+nbsphinx_timeout = 300  # Timeout in seconds
+
+# Templates and patterns
 templates_path = ["_templates"]
+exclude_patterns: list[str] = [
+    "_build",
+    "**.ipynb_checkpoints",
+    "**/.pytest_cache",
+    "**/.git",
+    "**/.github",
+    "**/.venv",
+    "**/*.egg-info",
+    "**/build",
+    "**/dist",
+    "examples/notebooks/**",
+]
 
-source_suffix = ['.rst', '.md']
+# Automatic exclusion of prompts from the copies
+# https://sphinx-copybutton.readthedocs.io/en/latest/use.html#automatic-exclusion-of-prompts-from-the-copies
+copybutton_exclude = ".linenos, .gp, .go"
 
-source_encoding = 'utf-8-sig'
-
-# The master toctree document.
-master_doc = "index"
-
-# language = 'zh_CN'
-
-exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
-
-# The name of the Pygments (syntax highlighting) style to use.
-pygments_style = "sphinx"
-
-todo_include_todos = False
+# Enable section anchors for cross-referencing
+autosectionlabel_prefix_document = True
 
 # -- Options for HTML output -------------------------------------------
 
-# html_theme = "alabaster"
-html_theme = "sphinx_rtd_theme"
-# html_theme = "sphinx_typo3_theme"
-
-tml_logo = "_static/logo.png"
-
-html_static_path = ['_static']
-# html_style = "custom.css"
-
-html_theme_options = {}
-
-# Output file base name for HTML help builder.
-htmlhelp_basename = "coreXAlgo"
-# 可选：修改 html_title 来控制浏览器标签页标题
-html_title = 'coreXAlgo Documentation'
-
-# -- Options for LaTeX output ------------------------------------------
-
-latex_elements = {
-    # The paper size ('letterpaper' or 'a4paper').
-    #
-    # 'papersize': 'letterpaper',
-    # The font size ('10pt', '11pt' or '12pt').
-    #
-    # 'pointsize': '10pt',
-    # Additional stuff for the LaTeX preamble.
-    #
-    # 'preamble': '',
-    # Latex figure (float) alignment
-    #
-    # 'figure_align': 'htbp',
+html_theme = "sphinx_book_theme"
+html_logo = "_static/images/logos/coreXAlgo-icon.png"
+html_favicon = "_static/images/logos/coreXAlgo-favicon.png"
+html_static_path = ["_static"]
+html_theme_options = {
+    "logo": {
+        "text": "coreXAlgo",
+    },
 }
 
-# Grouping the document tree into LaTeX files. List of tuples
-# (source start file, target name, title, author, documentclass
-# [howto, manual, or own class]).
-latex_documents = [
-    (
-        master_doc,
-        "corexAlgo.tex",
-        "corexAlgo Documentation",
-        author,
-        "manual",
-    ),
-]
 
-# -- Options for manual page output ------------------------------------
-
-# One entry per manual page. List of tuples
-# (source start file, name, description, authors, manual section).
-man_pages = [(master_doc, "corexAlgo", "corexAlgo Documentation", [author], 1)]
-
-# -- Options for Texinfo output ----------------------------------------
-
-# Grouping the document tree into Texinfo files. List of tuples
-# (source start file, target name, title, author,
-#  dir menu entry, description, category)
-texinfo_documents = [
-    (
-        master_doc,
-        "corexAlgo",
-        "corexAlgo Documentation",
-        author,
-        "corexAlgo",
-        "One line description of project.",
-        "Miscellaneous",
-    ),
-]
-
-
-def setup(app):
-    app.add_css_file('custom.css')
+# External documentation references
+intersphinx_mapping = {
+    "python": ("https://docs.python.org/3", None),
+    "torch": ("https://pytorch.org/docs/stable", None),
+    "lightning": ("https://lightning.ai/docs/pytorch/stable/", None),
+}

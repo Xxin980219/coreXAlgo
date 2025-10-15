@@ -1,9 +1,9 @@
-# coreXAlgo.utils.bbox_util
+# Bbox_util
 
-[coreXAlgo.utils.bbox_util](``) bbox框处理和可视化
+bbox框处理和可视化
 
 ```{eval-rst}
-.. automodule:: coreXAIgo.utils.bbox_util
+.. automodule:: coreXAlgo.utils.bbox_util
    :members:
    :undoc-members:
    :show-inheritance:
