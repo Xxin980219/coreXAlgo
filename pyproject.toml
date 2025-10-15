@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 
 # 添加 Hatch 版本配置
 [tool.hatch.version]
-path = "src/coreXAlgo/__init__.py"
+path = "coreXAlgo/__init__.py"
 
 [project]
 name = "coreXAlgo"
