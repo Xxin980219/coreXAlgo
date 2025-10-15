@@ -130,6 +130,19 @@ xpu = [
 ]
 
 
+
+# Hatch 构建配置
+[tool.hatch.build.targets.wheel]
+packages = ["coreXAlgo"]
+
+[tool.hatch.build]
+include = [
+    "coreXAlgo/**/*.py",
+    "coreXAlgo/**/*.pyi",
+    "README.md",
+    "LICENSE",
+]
+
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 # UV CONFIGURATION                                                            #
 [tool.uv]
