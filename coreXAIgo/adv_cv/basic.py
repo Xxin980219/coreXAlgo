@@ -1,6 +1,5 @@
-__all__ = ['ncc_tensor']
-
 import cv2
+import torch
 
 
 def ncc_tensor(x, y):
@@ -14,7 +13,7 @@ def ncc_tensor(x, y):
     Returns:
         (M, N) 维张量，数值范围在 [-1, 1] 之间
     """
-    import torch
+
     # 对x和y进行零均值化（减去均值）
     x = x - x.mean(dim=-1, keepdim=True)
     y = y - y.mean(dim=-1, keepdim=True)

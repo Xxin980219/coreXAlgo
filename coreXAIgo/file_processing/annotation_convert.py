@@ -3,9 +3,7 @@ import os
 import cv2
 from pathlib import Path
 from typing import List, Dict, Tuple
-from ..utils import set_logging
-
-__all__ = ['YOLOAnnotation', 'LabelMeAnnotation', 'VOCAnnotation', 'AnnotationConverter']
+from ..utils.basic import set_logging
 
 
 class YOLOAnnotation:
@@ -19,7 +17,7 @@ class YOLOAnnotation:
     1. 边界框格式：<class_id> <center_x> <center_y> <width> <height>
     2. 分割多边形格式：<class_id> <x1> <y1> <x2> <y2> ... <xn> <yn>
 
-    Attributes:
+    Args:
         class_names (List[str]): 类别名称列表，列表索引对应class_id，例如：
                                 ['person', 'car'] 表示 class_id 0=person, 1=car
         annotations (List[Tuple[int, List[float]]]): 存储所有标注的列表，

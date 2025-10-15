@@ -7,23 +7,51 @@ from typing import Dict, Callable, Optional
 
 from tqdm import tqdm
 
-from ..utils import set_logging
-
-__all__ = ['FTPClient']
+from .basic import set_logging
+from .constants import TIMEOUT, RETRY_TIMES
 
 
 def _ftp_block_callback(file_size, percent_callback=None, size_callback=None, process_block=None):
-    """ load/upload block callback
+    """
+    FTP文件传输块回调函数包装器，该函数创建一个回调包装器，用于处理FTP文件传输过程中的数据块回调。
+    支持进度百分比回调、已传输大小回调和原始数据处理。
 
-    :param file_size(int): total file size
-    :param percent_callback(function): 进度百分比回调函数
-    :param size_callback(function): 进度已下载大小回调函数
-    :param process_block(function): 原始数据处理函数，如写入文件
-    :return: (function)
+    Args:
+        file_size (int): 文件总大小（字节数）
+        percent_callback (Tuple[function, optional]): 进度百分比回调函数，接收一个整数参数（0-100）
+        size_callback (Tuple[function, optional]): 已传输大小回调函数，接收两个参数：总文件大小和当前块大小
+        process_block (Tuple[function, optional]): 原始数据处理函数，接收一个bytes参数，用于处理每个数据块（如写入文件）
+
+    Returns:
+        function: 回调包装器函数，接收一个bytes类型的数据块参数
+
+    Example:
+        >>> # 示例用法
+        >>> def print_percent(percent):
+        ...     print(f"进度: {percent}%")
+        >>>
+        >>> def handle_block(data):
+        ...     # 处理数据块，如写入文件
+        ...     pass
+        >>>
+        >>> callback = _ftp_block_callback(
+        ...     file_size=1024000,
+        ...     percent_callback=print_percent,
+        ...     process_block=handle_block
+        ... )
+        >>>
+        >>> # 在FTP传输中使用callback
+        >>> # ftp.retrbinary('RETR filename', callback)
     """
     load_progress = [0, -1]  # [load_size, load_percent]
 
     def _callback_wrapper(data: bytes):
+        """
+        回调包装器内部函数，处理每个数据块，执行相应的回调函数
+
+        Args:
+            data : 当前传输的数据块
+        """
         if process_block:
             process_block(data)
         if percent_callback:
@@ -40,13 +68,38 @@ def _ftp_block_callback(file_size, percent_callback=None, size_callback=None, pr
 
 
 class FTPClient:
-    TIMEOUT = 5
-    RETRY_TIMES = 3
+    """
+    FTP客户端类，提供完整的FTP服务器操作功能
+
+    功能特性：
+    - 多服务器配置管理
+    - 自动连接和重连机制
+    - 文件上传下载（支持断点续传）
+    - 目录遍历和文件列表获取
+    - 进度可视化和回调通知
+    - 异常处理和重试机制
+
+    Example:
+        >>> from ftplib import FTP
+        >>> ftp_configs = {
+        ...     "server1": {
+        ...         "host": "ftp.example.com",
+        ...         "port": 21,
+        ...         "username": "user",
+        ...         "password": "pass"
+        ...     }
+        ... }
+        >>> client = FTPClient(ftp_configs, verbose=True)
+        >>> client.download_file("server1", "/remote/file.txt", "./local/file.txt")
+    """
 
     def __init__(self, ftp_configs: Dict[str, dict], verbose=False):
         """
         初始化FTP客户端
-        :param ftp_configs: ftp配置字典 {ftp_name: {host,port,username,password,...}}
+
+        Args:
+            ftp_configs: FTP配置字典，格式为 {ftp_name: {host, port, username, password, ...}}
+            verbose: 是否启用详细日志输出
         """
         self._configs = ftp_configs
         self._ftp = None
@@ -55,10 +108,17 @@ class FTPClient:
 
     def _ftpconnect(self, ftp_name=None, debug_level=0):
         """
-        :param debug_level: 调试级别
-                            0: 无输出
-                            1: 命令和响应
-                            2: 完整通信详情
+        连接到FTP服务器
+
+        Args:
+            ftp_name: FTP配置名称，如果为None则使用当前已设置的ftp_name
+            debug_level: 调试级别
+                         0: 无输出
+                         1: 输出命令和响应
+                         2: 输出完整通信详情
+
+        Returns:
+            FTP连接对象
         """
         if ftp_name is not None:
             self.ftp_name = ftp_name
@@ -66,14 +126,14 @@ class FTPClient:
             raise ValueError(f"FTP配置 '{self.ftp_name}' 不存在")
 
         config = self._configs[self.ftp_name]
-        self._ftp = FTP(timeout=self.TIMEOUT)
+        self._ftp = FTP(timeout=TIMEOUT)
         self._ftp.set_debuglevel(debug_level)  # 开启调试日志
 
         try:
             # 1. 连接服务器
             try:
                 self._ftp.connect(self._configs[self.ftp_name]['host'], self._configs[self.ftp_name]['port'],
-                                  timeout=self.TIMEOUT)
+                                  timeout=TIMEOUT)
                 welcome_msg = self._ftp.getwelcome()
                 if not welcome_msg.startswith('220'):
                     raise RuntimeError(f"非预期欢迎消息: {welcome_msg}")
@@ -110,18 +170,33 @@ class FTPClient:
 
         except all_errors as e:
             # 确保发生异常时关闭连接
-            self.close()
+            self._close()
             raise RuntimeError(f"FTP操作失败: {e}")
 
     def _ftp_reconnect(self):
-        self.close()
+        self._close()
         self._ftpconnect()
 
     def is_connected(self, ftp_name, debug_level=0):
+        """
+        检查与指定FTP服务器的连接状态
+
+        Args:
+            ftp_name (str): FTP配置名称，用于标识要检查的服务器配置
+            debug_level (int): 调试级别，传递给_ftpconnect方法
+                             0: 无调试输出
+                             1: 输出命令和响应
+                             2: 输出完整通信详情
+
+        Returns:
+            bool: 连接状态
+                True: 服务器可达且认证成功
+                False: 连接失败、认证失败或配置不存在
+        """
         try:
             if not self._ftp:
                 self._ftpconnect(ftp_name, debug_level)
-                self.close()
+                self._close()
             return True
         except:
             return False
@@ -130,9 +205,9 @@ class FTPClient:
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
-        self.close()
+        self._close()
 
-    def close(self):
+    def _close(self):
         """close ftp connect
 
         :return:
@@ -147,7 +222,7 @@ class FTPClient:
 
     def _safe_ftp_op(self, operation: Callable):
         """带重试的FTP操作封"""
-        for retry in range(self.RETRY_TIMES):
+        for retry in range(RETRY_TIMES):
             try:
                 if self._ftp:
                     return operation()
@@ -156,12 +231,28 @@ class FTPClient:
                 return None
             except Exception as e:
                 self.logger.warning('FTP操作异常: %s', str(e))
-            time.sleep(self.TIMEOUT ** (retry + 1))
+            time.sleep(TIMEOUT ** (retry + 1))
             self._ftp_reconnect()
         return None
 
     def is_dir(self, remote_path, guess_by_extension=True):
-        """判断远程路径是否为目录"""
+        """
+        判断远程路径是否为目录
+
+        Args:
+            remote_path (str): 要检查的远程路径
+            guess_by_extension (bool): 是否使用扩展名猜测方式
+                True: 使用快速猜测（性能好，但可能有误判）
+                False: 使用准确判断（性能较差，但准确）
+
+        Returns:
+            bool: True表示是目录，False表示是文件或路径不存在
+
+        Example:
+            >>> ftp.is_dir("/home/user")      # 可能返回True（目录）
+            >>> ftp.is_dir("/home/file.txt")  # 可能返回False（文件）
+            >>> ftp.is_dir("/invalid/path")   # 返回False（路径不存在）
+        """
         if guess_by_extension:
             return '.' not in os.path.basename(remote_path)[-6:]
 
@@ -178,14 +269,51 @@ class FTPClient:
             self._safe_ftp_op(lambda: self._ftp.cwd(original_dir))
 
     def list_dir(self, remote_dir):
-        """列出远程目录内容"""
+        """
+        列出远程目录的内容（文件和子目录名称）
+
+        Args:
+        remote_dir (str): 要列出的远程目录路径
+                        可以是绝对路径（如"/home/user"）或相对路径（如"docs"）
+                        如果为空字符串，表示当前工作目录
+
+        Returns:
+            list: 包含目录中所有文件和子目录名称的列表
+                  如果目录为空、不存在或操作失败，返回空列表
+                  列表中的名称不包含完整路径，只有文件名或目录名
+
+        Example:
+            >>> ftp.list_dir("/home/user")
+            ['file1.txt', 'file2.pdf', 'subdirectory', 'archive.zip']
+
+            >>> ftp.list_dir("/nonexistent")
+            []  # 目录不存在时返回空列表
+
+            >>> ftp.list_dir("")
+            ['.', '..', 'file1.txt', 'docs']  # 当前目录可能包含特殊条目
+        """
         return self._safe_ftp_op(lambda: self._ftp.nlst(remote_dir)) or []
 
     def get_dir_file_list(self, ftp_name, ftp_dir):
-        """get ftp directory file list
+        """
+        递归获取FTP目录及其所有子目录中的文件列表
 
-        :param file_dir(str): ftp directory
-        :return: (list) ftp file list
+        Args:
+            ftp_name (str): FTP配置名称，用于标识使用哪个FTP服务器配置
+            ftp_dir (str): 要遍历的远程目录路径，可以是绝对路径或相对路径
+                          如果路径不存在，将返回空列表
+
+        Returns:
+            list: 包含所有文件完整路径的列表，格式为：
+                  ["/path/to/file1.txt", "/path/to/subdir/file2.pdf", ...]
+                  如果目录为空或不存在，返回空列表
+
+        Example:
+            >>> ftp_client.get_dir_file_list("my_ftp", "/data")
+            ['/data/file1.txt', '/data/docs/report.pdf', '/data/images/photo.jpg']
+
+            >>> ftp_client.get_dir_file_list("my_ftp", "/empty_dir")
+            []  # 空目录返回空列表
         """
         if not self._ftp:
             self.ftp_name = ftp_name
@@ -201,7 +329,7 @@ class FTPClient:
                 else:
                     file_list.append(full_path)
         finally:
-            self.close()
+            self._close()
         return file_list
 
     def download_file(self, ftp_name, remote_path, local_path, bufsize=1024,
@@ -273,7 +401,7 @@ class FTPClient:
             self.logger.error(f"❌ 下载失败: {e}")
             return False
         finally:
-            self.close()
+            self._close()
 
     def upload_file(self, ftp_name, local_path, remote_path, bufsize=1024,
                     progress_callback: Optional[Callable[[int, int], None]] = None):
@@ -352,7 +480,7 @@ class FTPClient:
             self.logger.error(f"❌ 下载失败: {e}")
             return False
         finally:
-            self.close()
+            self._close()
 
     def _visualization(self, ftp_name, remote_path, local_path, processor, operation='download'):
         """
@@ -371,6 +499,13 @@ class FTPClient:
         }
         with tqdm(desc=desc_map[operation], unit="B", unit_scale=True, unit_divisor=1024, miniters=1) as pbar:
             def update_progress(bytes_transferred, total_bytes):
+                """
+                 进度更新回调函数，由processor函数在传输过程中调用
+
+                 Args:
+                     bytes_transferred (int): 已传输的字节数
+                     total_bytes (int): 文件总字节数
+                 """
                 if not hasattr(pbar, 'total'):
                     pbar.total = total_bytes
                 pbar.update(bytes_transferred - pbar.n)
@@ -383,7 +518,26 @@ class FTPClient:
             )
 
     def download_file_visualization(self, ftp_name, remote_path, local_path):
-        """下载文件可视化"""
+        """
+        带可视化进度条的下载文件方法
+
+        Args:
+            ftp_name (str): FTP配置名称，指定使用哪个FTP服务器
+            remote_path (str): 要下载的远程文件路径
+            local_path (str): 本地保存路径，可以是文件路径或目录路径
+                            如果是目录，文件将保存到该目录下，使用远程文件名
+
+        Returns:
+            bool: 下载是否成功（与download_file方法返回值一致）
+
+        Example:
+            >>> ftp_client.download_file_visualization(
+            ...     "my_ftp",
+            ...     "/server/data/large_file.zip",
+            ...     "./downloads/large_file.zip"
+            ... )
+            # 显示：下载文件: 45%|████▌     | 45.2M/100M [00:30<00:45, 1.2MB/s]
+        """
         self._visualization(
             ftp_name=ftp_name,
             remote_path=remote_path,
@@ -393,7 +547,26 @@ class FTPClient:
         )
 
     def upload_file_visualization(self, ftp_name, local_path, remote_path):
-        """上传文件可视化"""
+        """
+        带可视化进度条的上传文件方法
+
+        Args:
+            ftp_name (str): FTP配置名称，指定使用哪个FTP服务器连接
+            local_path (str): 要上传的本地文件路径，必须是存在的文件
+            remote_path (str): 远程保存路径，可以是文件路径或目录路径
+                             如果是目录，文件将保存到该目录下，使用本地文件名
+
+        Returns:
+            bool: 上传是否成功（与upload_file方法返回值一致）
+
+        Example:
+            >>> ftp_client.upload_file_visualization(
+            ...     "my_ftp",
+            ...     "./local/large_file.zip",
+            ...     "/server/backups/large_file.zip"
+            ... )
+            # 显示：上传文件: 45%|████▌     | 45.2M/100M [00:30<00:45, 1.2MB/s]
+        """
         self._visualization(
             ftp_name=ftp_name,
             remote_path=remote_path,
@@ -516,7 +689,7 @@ class FTPClient:
                         os.remove(local_path)
 
         finally:
-            self.close()
+            self._close()
             if progress_callback:
                 progress_callback(total_files, total_files, "下载完成")
 

@@ -1,9 +1,6 @@
 import cv2
 import numpy as np
 
-__all__ = ['polygon_to_bbox', 'draw_bboxes_on_img', 'draw_bboxes_on_img_pro', 'draw_polygons_on_img_pro',
-           'cnt_to_polygon', 'mask_to_polygon', 'mask_to_polygons']
-
 
 def polygon_to_bbox(polygon):
     """
@@ -61,8 +58,6 @@ def draw_bboxes_on_img(img, bboxes, labels=None, color=(255, 0, 0),
         >>> result = draw_bboxes_on_img(img, bboxes, labels, color=(0, 255, 0))
         >>> cv2.imwrite("result.jpg", result)
     """
-    import cv2
-
     if not bboxes:
         return img
 

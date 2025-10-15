@@ -2,9 +2,7 @@ import os
 import cv2
 from tqdm import tqdm
 
-from ..utils import set_logging
-
-__all__ = ['resize_box_to_target', 'sliding_crop_image', 'TaggedImageCrop', 'batch_multithreaded_image_cropping']
+from ..utils.basic import set_logging
 
 
 def resize_box_to_target(box, target_size, original_size):
@@ -84,7 +82,7 @@ class TaggedImageCrop:
     用于将带有VOC格式标注的图像裁剪成多个小块，同时自动调整标注信息。
     适用于目标检测数据增强、大图像分割处理等场景。
 
-    Attributes:
+    Args:
         retrain_no_detect (bool): 是否保留没有目标的裁剪块
         separate_ok_ng (bool): 是否将OK（无缺陷）和NG（有缺陷）图像分开保存
         save_dir (str): 保存目录路径
@@ -294,7 +292,7 @@ class TaggedImageCrop:
         """
         # 读取图像
         global annotations
-        image,original_size = self._process_image(image_path)
+        image, original_size = self._process_image(image_path)
 
         if xml_path is not None:
             # 解析XML标签

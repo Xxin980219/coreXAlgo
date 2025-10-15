@@ -4,9 +4,7 @@ from typing import Union, List, Set
 
 from tqdm import tqdm
 
-from ..utils import set_logging
-
-__all__ = ['update_xml_categories', 'get_images_without_annotations', 'get_defect_classes_and_nums','get_images_with_specific_categories']
+from ..utils.basic import set_logging
 
 
 def update_xml_categories(xml_path, source_categories, target_categories, verbose=False):
@@ -141,7 +139,7 @@ def get_defect_classes_and_nums(xml_dir, verbose=False):
     return classes_and_nums
 
 
-def get_images_with_specific_categories(xml_path, target_categories,verbose=False):
+def get_images_with_specific_categories(xml_path, target_categories, verbose=False):
     """
     提取XML文件中仅包含指定类别的图片（不含扩展名）
 

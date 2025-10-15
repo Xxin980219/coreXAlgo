@@ -1,42 +1,39 @@
 import json
 import logging
 import os
-import pickle
 import sys
-import numpy as np
+import pickle
 import yaml
+import random
+import torch
+import numpy as np
 from tqdm import tqdm
-
-__all__ = ['colorstr', 'set_all_seed', 'set_logging', 'print_gpu_memory', 'set_gpu_visible', 'obj_to_json',
-           'obj_from_json', 'obj_to_yaml', 'obj_from_yaml', 'obj_to_pkl', 'obj_from_pkl', 'thread_pool']
 
 
 def colorstr(*input):
     """
-        输出带颜色和样式的字符串（ANSI转义码）
+    输出带颜色和样式的字符串（ANSI转义码）
 
-        此函数用于在终端中输出带有颜色和样式的文本，支持多种颜色和文本样式组合。
-
-        Args:
-            *input: 可变参数，最后一个参数为要格式化的字符串，前面的参数为颜色和样式
+    Args:
+        *input: 可变参数，最后一个参数为要格式化的字符串，前面的参数为颜色和样式
                     如果只提供一个参数，则默认使用蓝色粗体
 
-        Returns:
+    Returns:
             str: 带有ANSI转义码的格式化字符串
 
-        Example:
-            >>> # 基本用法
-            >>> print(colorstr('red', 'bold', 'Error Message'))
-            >>> print(colorstr('green', 'Success!'))
-            >>> print(colorstr('hello world'))  # 默认蓝色粗体
-
-            >>> # 组合使用
-            >>> warning_msg = colorstr('yellow', 'underline', 'Warning:')
-            >>> print(f"{warning_msg} This is a warning message")
-
-            >>> # 在日志中使用
-            >>> logger.info(colorstr('bright_red', 'CRITICAL:') + " System error occurred")
-        """
+    Example:
+        >>> # 基本用法
+        >>> print(colorstr('red', 'bold', 'Error Message'))
+        >>> print(colorstr('green', 'Success!'))
+        >>> print(colorstr('hello world'))  # 默认蓝色粗体
+        >>>
+        >>> # 组合使用
+        >>> warning_msg = colorstr('yellow', 'underline', 'Warning:')
+        >>> print(f"{warning_msg} This is a warning message")
+        >>>
+        >>> # 在日志中使用
+        >>> logger.info(colorstr('bright_red', 'CRITICAL:') + " System error occurred")
+    """
     # Colors a string https://en.wikipedia.org/wiki/ANSI_escape_code, i.e.  colorstr('blue','bold', 'hello world')
     *args, string = input if len(input) > 1 else ('blue', 'bold', input[0])  # color arguments, string
     COLORS = {
@@ -78,15 +75,9 @@ def set_all_seed(seed: int):
     """
     设置所有随机数生成器的种子以确保结果可复现
 
-    此函数设置Python内置random、numpy、pytorch（CPU和GPU）的随机种子，
-    确保实验的可重复性。
-
     Args:
         seed (int): 随机种子值
     """
-    import random
-    import torch
-
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -98,8 +89,6 @@ def set_all_seed(seed: int):
 def set_logging(name="LOGGING_NAME", verbose=True):
     """
     配置并返回一个日志记录器
-
-    创建一个配置好的日志记录器，可选择是否输出到标准输出，适用于大多数日志需求。
 
     Args:
         name (str): 日志记录器的名称
@@ -145,8 +134,6 @@ def print_gpu_memory(device=None, verbose=True):
     """
     打印当前GPU内存使用情况
 
-    显示当前GPU的内存分配和保留情况，包括最大值统计。
-
     Args:
         device (int, optional): 指定GPU设备ID，默认为当前设备
         verbose (bool): 是否打印详细信息
@@ -162,7 +149,6 @@ def print_gpu_memory(device=None, verbose=True):
         >>> mem_stats = print_gpu_memory(verbose=False)
         >>> print(f"Allocated: {mem_stats['allocated']:.2f} GB")
     """
-    import torch
     if device is not None:
         torch.cuda.set_device(device)
     allocated = torch.cuda.memory_allocated() / (1024 ** 3)
@@ -188,9 +174,7 @@ def print_gpu_memory(device=None, verbose=True):
 
 def check_cuda_available():
     """
-    检查CUDA环境和GPU配置
-
-    打印详细的CUDA和GPU信息，包括版本、可用性、设备信息等。
+    检查CUDA环境和GPU配置, 打印详细的CUDA和GPU信息，包括版本、可用性、设备信息等
 
     Example:
         >>> # 在程序开始时检查GPU环境
@@ -201,7 +185,6 @@ def check_cuda_available():
         >>>     check_cuda_available()
         >>>     raise RuntimeError("CUDA not available")
     """
-    import torch
     print("-" * 60)
     print('CUDA版本:', torch.version.cuda)
     print('Pytorch版本:', torch.__version__)
@@ -230,15 +213,12 @@ def set_gpu_visible(devices):
     Example:
         >>> # 只使用第0号GPU
         >>> set_gpu_visible(0)
-        >>> import torch
         >>>
         >>> # 使用多块GPU
         >>> set_gpu_visible('0,1,2')
-        >>> import torch
         >>>
         >>> # 在分布式训练中设置
         >>> set_gpu_visible(os.environ['LOCAL_RANK'])
-        >>> import torch
     """
     os.environ["CUDA_VISIBLE_DEVICES"] = str(devices)
 
@@ -246,8 +226,6 @@ def set_gpu_visible(devices):
 def obj_to_json(obj, json_path, ensure_ascii=True):
     """
     将Python对象保存为JSON文件
-
-    自动创建目录并将对象序列化为JSON格式。
 
     Args:
         obj: 要保存的Python对象
@@ -385,9 +363,7 @@ def _worker_func(func, items, idxs, progress_bar, failed_idxs):
 
 def thread_pool(func, items, workers):
     """
-    使用线程池并行处理数据项
-
-    使用多线程并行处理可迭代对象中的每个元素，支持进度显示和错误处理。
+    使用线程池并行处理数据项,使用多线程并行处理可迭代对象中的每个元素，支持进度显示和错误处理。
 
     Args:
         func: 处理每个元素的函数，可使用functools.partial固定参数
@@ -422,7 +398,6 @@ def thread_pool(func, items, workers):
         >>>     print(f"Failed to process: {image_files[idx]}")
     """
     import concurrent.futures
-    from tqdm.auto import trange
 
     if not hasattr(items, "__getitem__"):
         items = list(items)

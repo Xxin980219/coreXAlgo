@@ -6,46 +6,46 @@ from typing import Dict, Callable, Optional
 import paramiko
 from tqdm import tqdm
 
-from ..utils import set_logging
-
-__all__ = ['SFTPClient']
-
-
-def _sftp_block_callback(file_size, percent_callback=None, size_callback=None, process_block=None):
-    """ load/upload block callback
-
-    :param file_size(int): total file size
-    :param percent_callback(function): 进度百分比回调函数
-    :param size_callback(function): 进度已下载大小回调函数
-    :param process_block(function): 原始数据处理函数，如写入文件
-    :return: (function)
-    """
-    load_progress = [0, -1]  # [load_size, load_percent]
-
-    def _callback_wrapper(bytes_transferred, total_bytes):
-        if process_block:
-            process_block(bytes_transferred)
-        if percent_callback:
-            load_progress[0] = bytes_transferred
-
-            current_percent = int(100 * bytes_transferred / total_bytes)
-            if current_percent != load_progress[1]:
-                load_progress[1] = current_percent
-                percent_callback(current_percent)  # 回调百分比
-        if size_callback:
-            size_callback(total_bytes, bytes_transferred)
-
-    return _callback_wrapper
+from .basic import set_logging
+from .constants import TIMEOUT, RETRY_TIMES
 
 
 class SFTPClient:
-    TIMEOUT = 5
-    RETRY_TIMES = 3
+    """
+    SFTP客户端类，提供安全的文件传输协议操作
+
+    支持多服务器配置管理、断点续传、进度监控、错误重试等功能。
+    适用于需要安全可靠地进行文件上传下载的场景。
+    """
 
     def __init__(self, sftp_configs: Dict[str, dict], verbose=False):
         """
         初始化SFTP客户端
-        :param sftp_configs: SFTP配置字典 {sftp_name: {host,port,username,password,...}}
+
+        Args:
+            sftp_configs (Dict[str, dict]): SFTP配置字典，格式为：
+                {
+                    "sftp_server1": {
+                        "host": "sftp.example.com",
+                        "port": 22,
+                        "username": "username",
+                        "password": "password",
+                        "timeout": 30
+                    },
+                    "sftp_server2": {...}
+                }
+            verbose (bool, optional): 是否启用详细日志，默认为False
+
+        Example:
+            >>> sftp_config = {
+            ...     "production_sftp": {
+            ...         "host": "sftp.example.com",
+            ...         "port": 22,
+            ...         "username": "user",
+            ...         "password": "pass123"
+            ...     }
+            ... }
+            >>> client = SFTPClient(sftp_config, verbose=True)
         """
         self._configs = sftp_configs
         self._transport = None
@@ -56,6 +56,19 @@ class SFTPClient:
     def _sftpconnect(self, sftp_name=None):
         """
         连接SFTP服务器
+
+        Args:
+            sftp_name (str, optional): SFTP配置名称，如果为None则使用当前配置
+
+        Returns:
+            paramiko.SFTPClient: 已连接的SFTP客户端实例
+
+        Raises:
+            ValueError: 当SFTP配置不存在时
+            RuntimeError: 当连接失败时
+
+        Example:
+            >>> client._sftpconnect("production_sftp")
         """
         if sftp_name is not None:
             self.sftp_name = sftp_name
@@ -76,14 +89,14 @@ class SFTPClient:
                     port=config['port'],
                     username=config['username'],
                     password=config['password'],
-                    timeout=self.TIMEOUT
+                    timeout=TIMEOUT
                 )
             else:
                 raise ValueError("必须提供密码进行认证")
 
             # 3. 创建SFTP客户端
             self._sftp = self._ssh_client.open_sftp()
-            self._sftp.get_channel().settimeout(self.TIMEOUT)
+            self._sftp.get_channel().settimeout(TIMEOUT)
 
             self.logger.info(f"✅ 成功连接到SFTP: {self.sftp_name}")
             return self._sftp
@@ -93,10 +106,24 @@ class SFTPClient:
             raise RuntimeError(f"SFTP连接失败: {e}")
 
     def _sftp_reconnect(self):
+        """重新连接SFTP服务器"""
         self.close()
         self._sftpconnect()
 
     def is_connected(self, sftp_name):
+        """
+        检查是否能够连接到指定的SFTP服务器
+
+        Args:
+            sftp_name (str): SFTP配置名称
+
+        Returns:
+            bool: 连接是否成功
+
+        Example:
+            >>> if client.is_connected("production_sftp"):
+            ...     print("连接正常")
+        """
         try:
             if not self._sftp:
                 self._sftpconnect(sftp_name)
@@ -106,12 +133,14 @@ class SFTPClient:
             return False
 
     def __enter__(self):
+        """上下文管理器入口"""
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
-        self.close()
+        """上下文管理器退出，自动关闭连接"""
+        self._close()
 
-    def close(self):
+    def _close(self):
         """关闭SFTP连接"""
         if self._sftp:
             try:
@@ -129,19 +158,42 @@ class SFTPClient:
                 self._transport = None
 
     def _safe_sftp_op(self, operation: Callable):
-        """带重试的SFTP操作封装"""
-        for retry in range(self.RETRY_TIMES):
+        """
+        带重试机制的SFTP操作封装
+
+        Args:
+            operation (Callable): 要执行的SFTP操作函数
+
+        Returns:
+            Any: 操作函数的返回值，失败时返回None
+
+        Example:
+            >>> result = client._safe_sftp_op(lambda: client._sftp.listdir("/remote/path"))
+        """
+        for retry in range(RETRY_TIMES):
             try:
                 if self._sftp:
                     return operation()
             except Exception as e:
                 self.logger.warning('SFTP操作异常: %s', str(e))
-            time.sleep(self.TIMEOUT ** (retry + 1))
+            time.sleep(TIMEOUT ** (retry + 1))
             self._sftp_reconnect()
         return None
 
     def _file_exists(self, path):
-        """检查远程文件是否存在"""
+        """
+        检查远程文件是否存在
+
+        Args:
+            path (str): 远程文件路径
+
+        Returns:
+            bool: 文件是否存在
+
+        Example:
+            >>> if client._file_exists("/remote/file.txt"):
+            ...     print("文件存在")
+        """
         try:
             self._sftp.stat(path)
             return True
@@ -149,21 +201,55 @@ class SFTPClient:
             return False
 
     def is_dir(self, remote_path):
-        """判断远程路径是否为目录"""
+        """
+        判断远程路径是否为目录
+
+        Args:
+            remote_path (str): 远程路径
+
+        Returns:
+            bool: 是否为目录
+
+        Example:
+            >>> if client.is_dir("/remote/directory"):
+            ...     print("这是一个目录")
+        """
         try:
             return self._safe_sftp_op(lambda: self._sftp.stat(remote_path).st_mode & 0o40000 != 0)
         except:
             return False
 
     def list_dir(self, remote_dir):
-        """列出远程目录内容"""
+        """
+        列出远程目录内容
+
+        Args:
+            remote_dir (str): 远程目录路径
+
+        Returns:
+            List[str]: 目录内容列表
+
+        Example:
+            >>> files = client.list_dir("/remote/directory")
+            >>> for file in files:
+            ...     print(file)
+        """
         return self._safe_sftp_op(lambda: self._sftp.listdir(remote_dir)) or []
 
     def get_dir_file_list(self, sftp_name, sftp_dir):
-        """获取SFTP目录文件列表
+        """
+        递归获取SFTP目录下的所有文件列表
 
-        :param sftp_dir(str): SFTP目录
-        :return: (list) SFTP文件列表
+        Args:
+            sftp_name (str): SFTP配置名称
+            sftp_dir (str): 远程目录路径
+
+        Returns:
+            List[str]: 完整的文件路径列表
+
+        Example:
+            >>> file_list = client.get_dir_file_list("production_sftp", "/data/images")
+            >>> print(f"找到 {len(file_list)} 个文件")
         """
         if not self._sftp:
             self.sftp_name = sftp_name
@@ -178,21 +264,34 @@ class SFTPClient:
                 else:
                     file_list.append(full_path)
         finally:
-            self.close()
+            self._close()
         return file_list
 
     def download_file(self, sftp_name, remote_path, local_path,
                       progress_callback: Optional[Callable[[int, int], None]] = None):
-        """下载单个大文件（支持断点续传）
+        """
+        下载单个大文件（支持断点续传）
 
         Args:
-            sftp_name: 配置名称
-            remote_path: 远程文件路径
-            local_path: 本地保存路径
-            progress_callback: 进度回调（0-100）,接收两个参数(bytes_transferred, total_bytes)
+            sftp_name (str): SFTP配置名称
+            remote_path (str): 远程文件路径
+            local_path (str): 本地保存路径
+            progress_callback (Optional[Callable[[int, int], None]], optional):
+                进度回调函数，接收两个参数(bytes_transferred, total_bytes)
 
         Returns:
             bool: 是否下载成功
+
+        Example:
+            >>> def progress_callback(transferred, total):
+            ...     print(f"进度: {transferred}/{total} bytes")
+            >>>
+            >>> success = client.download_file(
+            ...     "production_sftp",
+            ...     "/remote/data.zip",
+            ...     "/local/data.zip",
+            ...     progress_callback=progress_callback
+            ... )
         """
         if not self._sftp:
             self.sftp_name = sftp_name
@@ -257,20 +356,29 @@ class SFTPClient:
             self.logger.error(f"❌ 下载失败: {e}")
             return False
         finally:
-            self.close()
+            self._close()
 
     def upload_file(self, sftp_name, local_path, remote_path,
                     progress_callback: Optional[Callable[[int, int], None]] = None):
-        """上传单个大文件（支持断点续传）
+        """
+        上传单个大文件（支持断点续传）
 
         Args:
-            sftp_name: 配置名称
-            local_path: 本地文件路径
-            remote_path: 远程保存路径
-            progress_callback: 进度回调（0-100）
+            sftp_name (str): SFTP配置名称
+            local_path (str): 本地文件路径
+            remote_path (str): 远程保存路径
+            progress_callback (Optional[Callable[[int, int], None]], optional):
+                进度回调函数，接收两个参数(bytes_transferred, total_bytes)
 
         Returns:
             bool: 是否上传成功
+
+        Example:
+            >>> success = client.upload_file(
+            ...     "production_sftp",
+            ...     "/local/data.zip",
+            ...     "/remote/data.zip"
+            ... )
         """
         if not self._sftp:
             self.sftp_name = sftp_name
@@ -388,18 +496,27 @@ class SFTPClient:
             self.logger.error(f"❌ 上传失败: {e}")
             return False
         finally:
-            self.close()
+            self._close()
 
     def _visualization(self, sftp_name, remote_path, local_path, processor, operation='download'):
         """
         统一的上传/下载可视化方法
 
         Args:
-            sftp_name: 配置名称
-            remote_path: 远程路径
-            local_path: 本地路径
-            processor: 处理函数 (upload_file 或 download_file)
-            operation: 操作类型 ('upload' 或 'download')
+            sftp_name (str): SFTP配置名称
+            remote_path (str): 远程路径
+            local_path (str): 本地路径
+            processor (Callable): 处理函数 (upload_file 或 download_file)
+            operation (str): 操作类型 ('upload' 或 'download')
+
+        Example:
+            >>> client._visualization(
+            ...     "production_sftp",
+            ...     "/remote/file.txt",
+            ...     "/local/file.txt",
+            ...     client.download_file,
+            ...     'download'
+            ... )
         """
         desc_map = {
             'upload': '上传文件',
@@ -419,7 +536,21 @@ class SFTPClient:
             )
 
     def download_file_visualization(self, sftp_name, remote_path, local_path):
-        """下载文件可视化"""
+        """
+        下载文件可视化（带进度条）
+
+        Args:
+            sftp_name (str): SFTP配置名称
+            remote_path (str): 远程文件路径
+            local_path (str): 本地保存路径
+
+        Example:
+            >>> client.download_file_visualization(
+            ...     "production_sftp",
+            ...     "/remote/data.zip",
+            ...     "/local/data.zip"
+            ... )
+        """
         self._visualization(
             sftp_name=sftp_name,
             remote_path=remote_path,
@@ -429,7 +560,21 @@ class SFTPClient:
         )
 
     def upload_file_visualization(self, sftp_name, local_path, remote_path):
-        """上传文件可视化"""
+        """
+        上传文件可视化（带进度条）
+
+        Args:
+            sftp_name (str): SFTP配置名称
+            local_path (str): 本地文件路径
+            remote_path (str): 远程保存路径
+
+        Example:
+            >>> client.upload_file_visualization(
+            ...     "production_sftp",
+            ...     "/local/data.zip",
+            ...     "/remote/data.zip"
+            ... )
+        """
         self._visualization(
             sftp_name=sftp_name,
             remote_path=remote_path,
@@ -440,19 +585,31 @@ class SFTPClient:
 
     def download_file_list(self, sftp_name, remote_path_list, local_path_list,
                            progress_callback: Optional[Callable[[int, int, str], None]] = None):
-        """下载多个文件（支持断点续传）
+        """
+        下载多个文件（支持断点续传）
 
         Args:
-            sftp_name: 配置名称
-            remote_path_list: 远程文件路径列表
-            local_path_list: 可以是以下两种形式：
-                     - str: 所有文件保存到该目录
-                     - list: 每个文件对应的本地保存路径
-            progress_callback: 进度回调函数，接收三个参数：
-                              (current_file_index, total_files, current_file_name)
+            sftp_name (str): SFTP配置名称
+            remote_path_list (List[str]): 远程文件路径列表
+            local_path_list (Union[str, List[str]]): 本地保存路径，可以是：
+                - str: 所有文件保存到该目录
+                - list: 每个文件对应的本地保存路径
+            progress_callback (Optional[Callable[[int, int, str], None]], optional):
+                进度回调函数，接收三个参数：(current_file_index, total_files, current_file_name)
 
         Returns:
             tuple: (成功下载数量, 总文件数量)
+
+        Example:
+            >>> def progress_callback(current, total, filename):
+            ...     print(f"正在下载 {current}/{total}: {filename}")
+            >>>
+            >>> success, total = client.download_file_list(
+            ...     "production_sftp",
+            ...     ["/remote/file1.txt", "/remote/file2.jpg"],
+            ...     "/local/downloads",
+            ...     progress_callback=progress_callback
+            ... )
         """
         if not self._sftp:
             self.sftp_name = sftp_name
@@ -546,18 +703,26 @@ class SFTPClient:
             return success_count, total_files
 
         finally:
-            self.close()
+            self._close()
 
     def download_single_file(self, sftp_name, remote_path, local_path):
-        """下载单个文件
+        """
+        下载单个文件（简单版本）
 
         Args:
-            sftp_name: 配置名称
-            remote_path: 远程文件路径
-            local_path: 本地保存路径
+            sftp_name (str): SFTP配置名称
+            remote_path (str): 远程文件路径
+            local_path (str): 本地保存路径
 
         Returns:
             bool: 是否下载成功
+
+        Example:
+            >>> success = client.download_single_file(
+            ...     "production_sftp",
+            ...     "/remote/config.ini",
+            ...     "/local/config.ini"
+            ... )
         """
         if not self._sftp:
             self.sftp_name = sftp_name
