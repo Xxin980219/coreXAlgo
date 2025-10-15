@@ -242,8 +242,8 @@ class FTPClient:
         Args:
             remote_path (str): 要检查的远程路径
             guess_by_extension (bool): 是否使用扩展名猜测方式
-                True: 使用快速猜测（性能好，但可能有误判）
-                False: 使用准确判断（性能较差，但准确）
+                                True: 使用快速猜测（性能好，但可能有误判）
+                                False: 使用准确判断（性能较差，但准确）
 
         Returns:
             bool: True表示是目录，False表示是文件或路径不存在
@@ -694,3 +694,4 @@ class FTPClient:
                 progress_callback(total_files, total_files, "下载完成")
 
         return success_count
+
