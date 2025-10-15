@@ -2,7 +2,8 @@ import concurrent.futures
 import random
 from threading import RLock
 from typing import Dict
-from ..utils import FTPClient, set_logging
+from .utils import FTPClient
+from .basic import set_logging
 
 
 class MtFtpDownloader:
@@ -185,5 +186,6 @@ class MtFtpDownloader:
                         client._close()
                     except Exception as e:
                         self.logger.warning(f"关闭FTP连接时出错: {str(e)}")
+
 
         return success_count
