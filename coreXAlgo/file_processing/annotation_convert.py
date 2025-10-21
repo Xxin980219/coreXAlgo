@@ -1,6 +1,8 @@
 import json
 import os
 import cv2
+import numpy as np
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import List, Dict, Tuple
 from ..utils.basic import set_logging
@@ -156,7 +158,7 @@ class LabelMeAnnotation:
     用于创建、管理和保存LabelMe格式的标注数据。
     LabelMe支持多种标注形状：多边形、矩形、圆形、点、线等。
 
-    Attributes:
+    Args:
         version (str): LabelMe格式版本号
         flags (Dict): 图像级别的标志信息
         shapes (List[Dict]): 存储所有标注形状的列表
@@ -290,7 +292,7 @@ class VOCObject:
     用于表示Pascal VOC格式的单个目标检测标注对象。
     包含对象类别、边界框坐标和难度标志等信息。
 
-    Attributes:
+    Args:
         name (str): 对象类别名称（如"person", "car", "dog"）
         bbox (List[float]): 边界框坐标 [xmin, ymin, xmax, ymax]
         difficult (int): 难度标志（0=容易，1=困难）
@@ -385,7 +387,7 @@ class VOCAnnotation:
     用于创建、管理和保存Pascal VOC格式的XML标注文件。
     支持目标检测任务的标准VOC格式，包含图像信息和多个对象标注。
 
-    Attributes:
+    Args:
         image_path (str): 图像文件路径（绝对或相对路径）
         image_width (int): 图像宽度（像素）
         image_height (int): 图像高度（像素）
@@ -510,7 +512,7 @@ class AnnotationConverter:
     3. YOLO ↔ VOC
     4. 创建空标签文件
 
-    Attributes:
+    Args:
         class_names (List[str]): 类别名称列表，用于类别ID映射
 
     Example:
@@ -562,6 +564,165 @@ class AnnotationConverter:
             raise ValueError(f"无法读取图像: {image_path}")
         return img.shape[:2]  # (height, width)
 
+    def convert_polygon_to_standard_format(self, polygon_data):
+        """
+        将各种格式的多边形数据转换为标准格式 [[x1,y1], [x2,y2], ...]
+
+        Args:
+            polygon_data: 支持以下格式：
+                - 字符串: "x1,y1;x2,y2;..." 或 "x1 y1 x2 y2 ..."
+                - NumPy数组: 形状为 (N, 2)
+                - 列表: [[x1,y1], [x2,y2], ...] 或 [x1,y1,x2,y2,...]
+                - 字典: {'points': [[x1,y1], [x2,y2], ...]}
+
+        Returns:
+            list: 标准格式的多边形坐标列表，或None如果无法转换
+        """
+        try:
+            # 检查是否已经是标准格式 [[x1,y1], [x2,y2], ...]
+            if (isinstance(polygon_data, (list, tuple)) and
+                    len(polygon_data) > 0 and
+                    isinstance(polygon_data[0], (list, tuple)) and
+                    len(polygon_data[0]) >= 2):
+                return polygon_data
+
+            # 处理字符串格式: "x1,y1;x2,y2;..." 或 "x1 y1 x2 y2 ..."
+            if isinstance(polygon_data, str):
+                points = []
+                # 尝试分号分隔格式: "x1,y1;x2,y2;..."
+                if ';' in polygon_data:
+                    pairs = polygon_data.split(';')
+                    for pair in pairs:
+                        if ',' in pair:
+                            x, y = pair.split(',')
+                            points.append([float(x.strip()), float(y.strip())])
+                # 尝试空格分隔格式: "x1 y1 x2 y2 ..."
+                else:
+                    coords = polygon_data.split()
+                    if len(coords) % 2 == 0:
+                        for i in range(0, len(coords), 2):
+                            x, y = coords[i], coords[i + 1]
+                            points.append([float(x), float(y)])
+                return points if len(points) >= 3 else None
+
+            # 处理类似numpy的数组对象
+            if hasattr(polygon_data, '__array__'):
+                array_data = np.asarray(polygon_data)
+                if array_data.ndim == 2 and array_data.shape[1] >= 2:
+                    return array_data.tolist()
+
+            # 处理字典格式
+            elif isinstance(polygon_data, dict):
+                if 'points' in polygon_data:
+                    points = polygon_data['points']
+                    if isinstance(points, (list, tuple)) and len(points) > 0:
+                        return points
+
+            # 处理扁平化列表格式: [x1, y1, x2, y2, ...]
+            elif (isinstance(polygon_data, (list, tuple)) and
+                  len(polygon_data) > 0 and
+                  isinstance(polygon_data[0], (int, float)) and
+                  len(polygon_data) % 2 == 0):
+                points = []
+                for i in range(0, len(polygon_data), 2):
+                    if i + 1 < len(polygon_data):
+                        points.append([polygon_data[i], polygon_data[i + 1]])
+                return points if len(points) >= 3 else None
+
+        except Exception as e:
+            if self.verbose:
+                print(f"格式转换错误: {e}")
+
+        return None
+
+    def polygons_to_yolo_seg(self, polygons, img_path: str, output_dir: str = None) -> str:
+        """
+        多边形数据 → YOLO分割格式
+
+        将多边形坐标数据转换为YOLO分割标注格式。
+
+        Args:
+            polygons: 支持多种格式的多边形数据，将通过 _convert_to_standard_format 统一转换
+            img_path: 对应图像的完整路径
+            output_dir: 输出目录（默认为父目录的labels文件夹）
+
+        Returns:
+            str: 生成的YOLO TXT文件路径
+
+        Raises:
+            FileNotFoundError: 当图像文件不存在时
+            ValueError: 当无法获取图像尺寸或多边形数据无效时
+
+        Example:
+            >>> # 使用numpy数组格式
+            >>> import numpy as np
+            >>> polygons = [
+            ...     np.array([[100, 50], [200, 50], [200, 150], [100, 150]]),
+            ...     np.array([[300, 100], [350, 200], [250, 200]])
+            ... ]
+            >>> converter.polygons_to_yolo_seg(polygons, 'images/001.jpg')
+            'labels/001.txt'
+            >>>
+            >>> # 使用列表格式
+            >>> polygons = [
+            ...     [[100, 50], [200, 50], [200, 150], [100, 150]],
+            ...     [[300, 100], [350, 200], [250, 200]]
+            ... ]
+            >>> converter.polygons_to_yolo_seg(polygons, '001.jpg', 'custom_labels')
+            'custom_labels/001.txt'
+        """
+        if output_dir is None:
+            output_dir = str(Path(img_path).parent.parent / "labels")
+        os.makedirs(output_dir, exist_ok=True)
+
+        # 获取图像尺寸
+        try:
+            img_height, img_width = self._get_image_size(img_path)
+        except Exception as e:
+            raise ValueError(f"无法获取图像尺寸: {e}")
+
+        yolo_ann = YOLOAnnotation(self.class_names, verbose=self.verbose)
+
+        #  统一转换和验证多边形数据
+        processed_polygons = []
+        for polygon in polygons:
+            if polygon is None:
+                continue
+
+            # 检查并转换为标准格式（Numpy 数组格式）
+            converted = self.convert_polygon_to_standard_format(polygon)
+            if converted is None or len(converted) < 3:
+                if self.verbose:
+                    print(f"警告: 跳过无效多边形数据: {type(polygon)}")
+                continue
+
+            # 统一归一化处理（无论输入原先是什么格式，现在都是标准格式）
+            try:
+                if isinstance(converted, np.ndarray):
+                    # NumPy向量化归一化
+                    normalized = converted.astype(float)
+                    normalized[:, 0] /= img_width
+                    normalized[:, 1] /= img_height
+                    normalized_points = normalized.flatten().tolist()
+                else:
+                    # 列表格式归一化
+                    normalized_points = [
+                        round(x / img_width, 6) if i % 2 == 0 else round(y / img_height, 6)
+                        for i, (x, y) in enumerate(zip(converted[::2], converted[1::2]))
+                    ]
+
+                # 添加标注（至少需要3个点）
+                if len(normalized_points) >= 6:
+                    yolo_ann.add_annotation(0, normalized_points)
+            except Exception as e:
+                if self.verbose:
+                    print(f"坐标归一化失败: {e}")
+
+            # 保存结果
+            txt_path = os.path.join(output_dir, Path(img_path).stem + ".txt")
+            yolo_ann.save(txt_path)
+            return txt_path
+
     def labelme_to_yolo_seg(self, json_path: str, output_dir: str = None) -> str:
         """
         LabelMe分割标注 → YOLO分割格式
@@ -573,10 +734,11 @@ class AnnotationConverter:
             output_dir: 输出目录（默认为父目录的labels文件夹）
 
         Returns:
-            生成的YOLO TXT文件路径
+            str: 生成的YOLO TXT文件路径
 
         Raises:
-            ValueError: 当标签不在class_names中时
+            FileNotFoundError: JSON文件不存在时
+            ValueError: 标签不在class_names中或图像尺寸无效时
 
         Example:
             >>> converter.labelme_to_yolo_seg('labelme/001.json')
@@ -589,30 +751,49 @@ class AnnotationConverter:
             output_dir = str(Path(json_path).parent.parent / "labels")
         os.makedirs(output_dir, exist_ok=True)
 
-        with open(json_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
+        # 读取JSON文件
+        try:
+            with open(json_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except FileNotFoundError:
+            raise FileNotFoundError(f"JSON文件不存在: {json_path}")
+        except json.JSONDecodeError:
+            raise ValueError(f"无效的JSON格式: {json_path}")
+
+        # 验证图像尺寸
+        try:
+            img_width, img_height = data['imageWidth'], data['imageHeight']
+            if img_width <= 0 or img_height <= 0:
+                raise ValueError(f"无效的图像尺寸: {img_width}x{img_height}")
+        except KeyError:
+            raise ValueError("JSON中缺少 imageWidth/imageHeight 字段")
 
         yolo_ann = YOLOAnnotation(self.class_names, verbose=self.verbose)
-        img_width = data['imageWidth']
-        img_height = data['imageHeight']
 
-        for shape in data['shapes']:
-            label = shape['label']
+        # 处理每个多边形
+        for shape in data.get('shapes', []):
+            label = shape.get('label', '')
             if label not in self.class_names:
-                raise ValueError(f"标签 '{label}' 不在 class_names 中")
+                if self.verbose:
+                    print(f"警告: 跳过未知标签 '{label}'")
+                continue  # 改为跳过而非报错，提高容错性
 
-            class_id = self.class_names.index(label)
-            points = shape['points']
-            if len(points) > 2:
-                normalized_points = []
+            points = shape.get('points', [])
+            if len(points) < 3:
+                if self.verbose:
+                    print(f"警告: 跳过点数不足的多边形 (标签: {label})")
+                continue
 
-                for x, y in points:
-                    nx = x / img_width
-                    ny = y / img_height
-                    normalized_points.extend([round(nx, 6), round(ny, 6)])
+            # 向量化归一化（性能优化）
+            try:
+                points_array = np.array(points, dtype=float)
+                normalized_points = (points_array / [img_width, img_height]).flatten().round(6).tolist()
+                yolo_ann.add_annotation(self.class_names.index(label), normalized_points)
+            except Exception as e:
+                if self.verbose:
+                    print(f"坐标归一化失败: {e}")
 
-                yolo_ann.add_annotation(class_id, normalized_points)
-
+        # 保存结果
         txt_path = os.path.join(output_dir, Path(json_path).stem + ".txt")
         yolo_ann.save(txt_path)
         return txt_path
@@ -1022,6 +1203,106 @@ class AnnotationConverter:
         txt_path = os.path.join(output_dir, Path(xml_path).stem + ".txt")
         yolo_ann.save(txt_path)
         return txt_path
+
+    def cvat_to_yolo_seg(self, xml_path: str, output_dir: str = None) -> str:
+        """
+        CVAT多边形标注 → YOLO分割格式
+
+        Args:
+            xml_path: CVAT XML标注文件路径
+            output_dir: 输出目录（默认为父目录的labels文件夹）
+
+        Returns:
+            str: 生成的YOLO TXT文件路径
+
+        Raises:
+            FileNotFoundError: 当XML文件不存在时
+            ET.ParseError: 当XML格式无效时
+            ValueError: 当图像尺寸无效或标签未定义时
+
+        Example:
+            >>> converter.cvat_to_yolo_seg('annotations.xml')
+            >>> # 输出: labels/image1.txt, labels/image2.txt ...
+        """
+        # 初始化输出目录
+        if output_dir is None:
+            output_dir = str(Path(xml_path).parent / "labels")
+        os.makedirs(output_dir, exist_ok=True)
+
+        # 解析XML文件
+        try:
+            tree = ET.parse(xml_path)
+        except FileNotFoundError:
+            raise FileNotFoundError(f"XML文件不存在: {xml_path}")
+        except ET.ParseError:
+            raise ValueError(f"无效的XML格式: {xml_path}")
+
+        # 提取类别名称
+        try:
+            cls_names = [
+                label.find("name").text
+                for label in tree.find("meta/job/labels").findall("label")
+            ]
+        except AttributeError:
+            raise ValueError("XML中缺少必要的meta/labels结构")
+
+        yolo_ann = YOLOAnnotation(cls_names, verbose=self.verbose)
+
+        # 处理每个图像
+        for img_obj in tree.findall('image'):
+            img_name = img_obj.attrib.get("name", "")
+            if not img_name:
+                if self.verbose:
+                    print("警告: 跳过未命名的图像")
+                continue
+
+            try:
+                img_width = float(img_obj.attrib["width"])
+                img_height = float(img_obj.attrib["height"])
+                if img_width <= 0 or img_height <= 0:
+                    raise ValueError(f"无效的图像尺寸: {img_width}x{img_height}")
+            except (KeyError, ValueError):
+                if self.verbose:
+                    print(f"警告: 跳过图像 {img_name}（无效尺寸）")
+                continue
+
+            # 处理每个多边形
+            for polygon in img_obj.findall("polygon"):
+                label = polygon.attrib.get("label")
+                if label not in cls_names:
+                    if self.verbose:
+                        print(f"警告: 跳过未知标签 '{label}'（图像: {img_name}）")
+                    continue
+
+                # 关键改进：使用convert_polygon_to_standard_format统一处理
+                points_str = polygon.attrib.get("points", "")
+                standardized = self.convert_polygon_to_standard_format(points_str)
+                if standardized is None or len(standardized) < 3:
+                    if self.verbose:
+                        print(f"警告: 跳过无效多边形（图像: {img_name}）")
+                    continue
+
+                # 归一化处理（适配convert_polygon_to_standard_format的输出格式）
+                try:
+                    if isinstance(standardized, np.ndarray):
+                        normalized = (standardized / [img_width, img_height]).flatten().round(6).tolist()
+                    else:  # 列表格式
+                        normalized = []
+                        for x, y in standardized:
+                            normalized.extend([round(x / img_width, 6), round(y / img_height, 6)])
+
+                    if len(normalized) >= 6:
+                        yolo_ann.add_annotation(cls_names.index(label), normalized)
+                except Exception as e:
+                    if self.verbose:
+                        print(f"归一化失败（图像: {img_name}）: {e}")
+
+            # 保存当前图像的标注
+            txt_path = os.path.join(output_dir, Path(img_name).stem + ".txt")
+            yolo_ann.save(txt_path)
+            yolo_ann.annotations.clear()  # 清空以备下一张图像使用
+
+        return output_dir
 
     def create_empty_yolo(self, img_path: str, output_dir: str = None) -> str:
         """

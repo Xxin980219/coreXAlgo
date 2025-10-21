@@ -7,7 +7,7 @@
 
 # 系统相关常量
 SYSTEM_NAME = "coreXAlgo"
-VERSION = "0.2.0"
+VERSION = "0.2.3"
 DEFAULT_ENCODING = "UTF-8"
 MAX_LOG_FILE_SIZE = 10485760  # 10MB，单位字节
 

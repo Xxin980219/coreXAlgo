@@ -187,6 +187,4 @@ class MtFtpDownloader:
                     except Exception as e:
                         self.logger.warning(f"关闭FTP连接时出错: {str(e)}")
 
-
         return success_count
-
