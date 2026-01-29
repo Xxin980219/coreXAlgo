@@ -119,7 +119,7 @@ def get_filenames(directory: str, extensions: Union[str, List[str]] = '.jpg',
 
     Example:
         >>> # 查找所有jpg文件名
-        >>> jpg_files = get_files('./images', '.jpg')
+        >>> jpg_files = get_filenames('./images', '.jpg')
         >>> print(f"找到 {len(jpg_files)} 个JPG文件")
         >>> # 输出示例: ['cat.jpg', 'dog.jpg']
     """
@@ -172,230 +172,406 @@ def get_filenames(directory: str, extensions: Union[str, List[str]] = '.jpg',
     return sorted(file_names)
 
 
-def extract_large_zip(zip_path: str, extract_to: str, chunk_size: int = 8192, skip_existing: bool = True,
-                      verbose=False):
+def get_duplicate_files(source_dir: str, compare_dir: str) -> List[str]:
     """
-    高效解压大ZIP文件
+    查找source_dir中在compare_dir里有重复文件名的文件
 
     Args:
-        zip_path: ZIP文件路径
-        extract_to: 解压目标目录（如果不存在会自动创建）
-        chunk_size: 解压缓冲区大小（字节），默认为8KB。处理大文件时可增大此值（如81920）
-        skip_existing: 是否跳过已存在的文件，避免重复解压
+        source_dir: 要查询的目录（只返回这个目录中的重复文件）
+        compare_dir: 比较的目录
 
-    Example:
-        >>> # 基本用法：解压到当前目录下的output文件夹
-        >>> extract_large_zip('large_archive.zip', './output')
-        >>>
-        >>> # 解压到指定目录，跳过已存在文件（默认行为）
-        >>> extract_large_zip('/backup/data.zip', '/home/user/extracted_data')
-        >>>
-        >>> # 强制重新解压（覆盖已存在文件），使用更大的缓冲区
-        >>> extract_large_zip('big_file.zip', './data',
-        >>>                  chunk_size=65536,  # 64KB缓冲区
-        >>>                  skip_existing=False)  # 覆盖现有文件
-        >>>
-        >>> # 处理非常大的压缩文件（如图片库备份）
-        >>> extract_large_zip('photos_backup.zip', '/media/external_drive/photos',
-        >>>                  chunk_size=131072)  # 128KB缓冲区
-
-    Notes:
-        - 对于特别大的ZIP文件（GB级别），建议增大chunk_size到64KB或128KB以提高性能
+    Returns:
+        source_dir中重复文件的完整路径列表
     """
-    logger = set_logging("extract_large_zip", verbose=verbose)
-    # 验证ZIP文件
-    if not os.path.isfile(zip_path):
-        raise FileNotFoundError(f"ZIP文件不存在: {zip_path}")
+    # 获取文件列表
+    from coreXAlgo.utils import IMAGE_TYPE_FORMAT
+    source_files = get_files(source_dir, IMAGE_TYPE_FORMAT)
+    compare_files = get_files(compare_dir, IMAGE_TYPE_FORMAT)
 
-    # 创建目标目录
-    os.makedirs(extract_to, exist_ok=True)
-    logger.info(f"准备解压: {zip_path} → {extract_to}")
+    # 提取compare_dir中的文件名集合
+    compare_filenames = {os.path.basename(p) for p in compare_files}
 
-    # 打开ZIP文件
+    # 找出source_dir中在compare_dir里有重复的文件
+    duplicate_files = []
+    for file_path in source_files:
+        filename = os.path.basename(file_path)
+        if filename in compare_filenames:
+            duplicate_files.append(file_path)
+
+    return duplicate_files
+
+def generate_sequential_filename(file_path):
+    """
+    生成带序号的文件名
+
+    Args:
+        file_path: 原始文件路径
+
+    Returns:
+        str: 新的带序号文件路径
+    """
+    dir_path, filename = os.path.split(file_path)
+    name, ext = os.path.splitext(filename)
+
+    index = 1
+    while True:
+        if index == 1:
+            # 第一次尝试：在原文件名后加_1
+            new_filename = f"{name}_1{ext}"
+        else:
+            # 后续尝试：递增序号
+            new_filename = f"{name}_{index}{ext}"
+
+        new_path = os.path.join(dir_path, new_filename)
+
+        # 检查文件是否已存在
+        if not os.path.exists(new_path):
+            return new_path
+
+        # 如果文件已存在，增加索引继续尝试
+        index += 1
+
+
+def copy_file(source_path, destination, overwrite=False, rename_if_exists=False):
+    """
+    单个文件拷贝，支持目录或文件路径，包含错误处理
+
+    Args:
+        source_path: 源文件路径
+        destination: 目标路径（目录或文件路径）
+        overwrite: 是否覆盖已存在的目标文件（默认为False）
+        rename_if_exists: 当目标文件已存在时是否重命名继续拷贝（默认为False）
+
+    Returns:
+        str: 拷贝后的完整目标路径
+    """
+    if not os.path.exists(source_path):
+        raise FileNotFoundError(f"源文件不存在: {source_path}")
+
+    if not os.path.isfile(source_path):
+        raise ValueError(f"源路径不是文件: {source_path}")
+
+    # 确定目标路径
+    if os.path.isdir(destination):
+        # destination是目录
+        target_dir = destination.rstrip(os.sep)
+        filename = os.path.basename(source_path)
+        target_path = os.path.join(target_dir, filename)
+    else:
+        # 检查destination是否应该被视为目录
+        dest_dir, dest_name = os.path.split(destination)
+        if not dest_name or (not os.path.splitext(destination)[1] and not os.path.exists(destination)):
+            # 没有文件名或没有扩展名且路径不存在，视为目录
+            if destination and not destination.endswith(os.sep):
+                destination += os.sep
+            filename = os.path.basename(source_path)
+            target_path = os.path.join(destination, filename)
+            target_dir = destination.rstrip(os.sep) if destination else ""
+        else:
+            # 视为文件路径
+            target_path = destination
+            target_dir = dest_dir
+
+    # 检查目标文件是否已存在
+    original_target_path = target_path
+    if os.path.exists(target_path):
+        if overwrite:
+            # 如果允许覆盖，先尝试删除已存在的文件
+            try:
+                os.remove(target_path)
+                print(f"已删除已存在的目标文件: {target_path}")
+            except Exception as e:
+                raise PermissionError(f"无法删除已存在的目标文件 {target_path}: {e}")
+
+        elif rename_if_exists:
+            # 如果允许重命名，在原文件名基础上添加序号
+            target_path = generate_sequential_filename(original_target_path)
+            print(f"目标文件已存在，重命名为: {target_path}")
+
+        else:
+            # 既不覆盖也不重命名，抛出异常
+            raise FileExistsError(f"目标文件已存在: {target_path}")
+
+    # 创建目标目录（如果不存在）
+    if target_dir:
+        os.makedirs(target_dir, exist_ok=True)
+        print(f"已创建/确认目标目录: {target_dir}")
+
     try:
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            # 获取文件列表并过滤目录
-            file_list = [f for f in zip_ref.namelist() if not f.endswith('/')]
-            total_size = sum(zip_ref.getinfo(f).file_size for f in file_list)
+        # 执行拷贝
+        shutil.copy2(source_path, target_path)
+        print(f"成功拷贝: {source_path} -> {target_path}")
 
-            # 带进度条解压
-            with tqdm(
-                    total=total_size,
-                    unit='B',
-                    unit_scale=True,
-                    desc=f"解压 {os.path.basename(zip_path)}"
-            ) as pbar:
-                for file in file_list:
-                    try:
-                        # 检查文件是否已存在
-                        dest_path = os.path.join(extract_to, file)
-                        if skip_existing and os.path.exists(dest_path):
-                            file_size = zip_ref.getinfo(file).file_size
-                            pbar.update(file_size)
-                            continue
+        # 验证拷贝是否成功
+        if not os.path.exists(target_path):
+            raise shutil.Error(f"拷贝后目标文件不存在: {target_path}")
 
-                        # 确保目标目录存在
-                        os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+        # 获取文件大小并验证
+        source_size = os.path.getsize(source_path)
+        target_size = os.path.getsize(target_path)
 
-                        # 分块解压大文件
-                        with zip_ref.open(file) as src, open(dest_path, 'wb') as dst:
-                            while True:
-                                chunk = src.read(chunk_size)
-                                if not chunk:
-                                    break
-                                dst.write(chunk)
-                                pbar.update(len(chunk))
+        if source_size != target_size:
+            print(f"警告: 源文件大小({source_size}字节)和目标文件大小({target_size}字节)不一致")
+        else:
+            print(f"文件大小验证成功: {source_size}字节")
 
-                    except Exception as e:
-                        logger.error(f"❌ 解压失败: {file} - {str(e)}")
-                        if os.path.exists(dest_path):
-                            os.remove(dest_path)
+        return target_path
 
-    except zipfile.BadZipFile as e:
-        logger.error(f"❌ ZIP文件损坏: {zip_path} - {str(e)}")
+    except PermissionError as e:
+        print(f"权限错误: 无法访问 {source_path} 或写入 {target_path}")
+        raise
+    except shutil.Error as e:
+        print(f"拷贝过程出错: {source_path} -> {target_path}, 错误: {e}")
         raise
     except Exception as e:
-        logger.error(f"❌ 解压过程中发生错误: {str(e)}")
+        print(f"未知错误: 拷贝 {source_path} -> {target_path}, 错误: {e}")
         raise
 
-    logger.info(f"✅ 解压完成: {extract_to}")
 
-
-def zip_folder(folder_path: str, output_path: str, compression_level: int = 9,
-               exclude_dirs: Optional[list] = None,
-               exclude_exts: Optional[list] = None,
-               show_progress: bool = True,
-               verbose: bool = False
-               ) -> None:
+def move_file(source_path, destination, overwrite=False, rename_if_exists=False):
     """
-    高效压缩文件夹为ZIP文件
+    单个文件移动，支持目录或文件路径，包含错误处理
 
     Args:
-        folder_path: 要压缩的文件夹路径
-        output_path: 输出的ZIP文件路径
-        compression_level: 压缩级别（0-9，0=不压缩/最快，9=最大压缩/最慢）
-        exclude_dirs: 要排除的目录名列表
-        exclude_exts: 要排除的文件扩展名列表
-        show_progress: 是否显示进度条
+        source_path: 源文件路径
+        destination: 目标路径（目录或文件路径）
+        overwrite: 是否覆盖已存在的目标文件（默认为False）
+        rename_if_exists: 当目标文件已存在时是否重命名继续移动（默认为False）
 
-    Example:
-        >>> # 基本用法：压缩当前目录到archive.zip
-        >>> zip_folder('./my_project', './archive.zip')
-        >>>
-        >>> # 排除缓存和版本控制目录，并显示进度
-        >>> zip_folder('./src', './src_backup.zip',
-        >>>           exclude_dirs=['__pycache__', '.git', 'node_modules'],
-        >>>           exclude_exts=['.log', '.tmp'],
-        >>>           show_progress=True)
-        >>>
-        >>> # 快速压缩（不压缩），仅打包
-        >>> zip_folder('/path/to/data', '/backup/data.zip',
-        >>>           compression_level=0,
-        >>>           show_progress=False)
-
-    Notes:
-        - 排除规则基于名称匹配，区分大小写
-        - 压缩大文件时建议使用压缩级别6-8，在速度和压缩率间取得平衡
+    Returns:
+        str: 移动后的完整目标路径
     """
-    logger = set_logging("zip_folder", verbose=verbose)
-    # 参数验证
-    if not os.path.isdir(folder_path):
-        raise FileNotFoundError(f"文件夹不存在: {folder_path}")
+    if not os.path.exists(source_path):
+        raise FileNotFoundError(f"源文件不存在: {source_path}")
 
-    if not 0 <= compression_level <= 9:
-        raise ValueError("压缩级别必须在0-9之间")
+    # 确定目标路径
+    if os.path.isdir(destination):
+        target_dir = destination.rstrip(os.sep)
+        filename = os.path.basename(source_path)
+        target_path = os.path.join(target_dir, filename)
+    else:
+        dest_dir, dest_name = os.path.split(destination)
+        if not dest_name or (not os.path.splitext(destination)[1] and not os.path.exists(destination)):
+            if destination and not destination.endswith(os.sep):
+                destination += os.sep
+            filename = os.path.basename(source_path)
+            target_path = os.path.join(destination, filename)
+            target_dir = destination.rstrip(os.sep) if destination else ""
+        else:
+            target_path = destination
+            target_dir = dest_dir
 
-    # 初始化排除列表
-    exclude_dirs = set(exclude_dirs or [])
-    exclude_exts = set(ext.lower() for ext in (exclude_exts or []))
-
-    # 准备文件列表
-    file_paths = []
-    total_size = 0
-
-    for root, dirs, files in os.walk(folder_path):
-        # 过滤排除目录
-        dirs[:] = [d for d in dirs if d not in exclude_dirs]
-
-        # 收集文件信息
-        for file in files:
-            if exclude_exts and os.path.splitext(file)[1].lower() in exclude_exts:
-                continue
-
-            file_path = os.path.join(root, file)
-            file_paths.append(file_path)
-            total_size += os.path.getsize(file_path)
-
-        # 处理空文件夹
-        if not files and not dirs:
-            rel_path = os.path.relpath(root, folder_path)
-            file_paths.append((root, rel_path))  # 标记为目录
-
-    # 创建ZIP文件
-    with zipfile.ZipFile(
-            output_path,
-            'w',
-            compression=zipfile.ZIP_DEFLATED,
-            compresslevel=compression_level
-    ) as zipf:
-        # 进度条设置
-        pbar = tqdm(
-            total=total_size,
-            unit='B',
-            unit_scale=True,
-            desc=f"压缩 {os.path.basename(folder_path)}",
-            disable=not show_progress
-        )
-
-        for item in file_paths:
+    # 检查目标文件是否已存在
+    original_target_path = target_path
+    if os.path.exists(target_path):
+        if overwrite:
             try:
-                if isinstance(item, tuple):  # 空目录处理
-                    root, rel_path = item
-                    zipf.writestr(os.path.join(rel_path, '.keep'), '')
-                else:
-                    file_path = item
-                    arcname = os.path.relpath(file_path, folder_path)
-                    zinfo = zipfile.ZipInfo.from_file(file_path, arcname)
-                    zinfo.compress_type = zipfile.ZIP_DEFLATED
-                    zinfo.date_time = time.localtime()[:6]
-
-                    # 分块读取大文件
-                    with zipf.open(zinfo, 'w') as zf, open(file_path, 'rb') as f:
-                        remaining = os.path.getsize(file_path)
-                        chunk_size = 8192
-                        while remaining > 0:
-                            chunk = f.read(min(chunk_size, remaining))
-                            zf.write(chunk)
-                            remaining -= len(chunk)
-                            pbar.update(len(chunk))
+                os.remove(target_path)
+                print(f"已删除已存在的目标文件: {target_path}")
             except Exception as e:
-                logger.error(f"\n❌ 文件压缩失败: {arcname} - {str(e)}")
+                raise PermissionError(f"无法删除已存在的目标文件 {target_path}: {e}")
+
+        elif rename_if_exists:
+            target_path = generate_sequential_filename(original_target_path)
+            print(f"目标文件已存在，重命名为: {target_path}")
+
+        else:
+            raise FileExistsError(f"目标文件已存在: {target_path}")
+
+    # 创建目标目录（如果不存在）
+    if target_dir:
+        os.makedirs(target_dir, exist_ok=True)
+        print(f"已创建/确认目标目录: {target_dir}")
+
+    try:
+        # 执行移动
+        shutil.move(source_path, target_path)
+        print(f"成功移动: {source_path} -> {target_path}")
+        return target_path
+    except Exception as e:
+        print(f"移动文件失败: {source_path} -> {target_path}, 错误: {e}")
+        raise
+
+
+def copy_files(file_list, destination_dir, overwrite=False, rename_if_exists=False,
+               create_subdirs=False, log_file=None):
+    """
+    批量拷贝文件
+
+    Args:
+        file_list: 文件路径列表
+        destination_dir: 目标目录
+        overwrite: 是否覆盖已存在的目标文件
+        rename_if_exists: 当目标文件已存在时是否重命名
+        create_subdirs: 是否在目标目录中保持源文件的目录结构
+        log_file: 日志文件路径（可选）
+
+    Returns:
+        tuple: (成功拷贝的文件列表, 失败的文件列表)
+    """
+    successful_copies = []
+    failed_copies = []
+
+    def write_log(message):
+        print(message)
+        if log_file:
+            with open(log_file, 'a', encoding='utf-8') as f:
+                f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - {message}\n")
+
+    import time
+    start_time = time.time()
+
+    write_log(f"\n{'=' * 50}")
+    write_log(f"开始批量拷贝: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    write_log(f"源文件数量: {len(file_list)}")
+    write_log(f"目标目录: {destination_dir}")
+    write_log(f"覆盖模式: {overwrite}")
+    write_log(f"重命名模式: {rename_if_exists}")
+    write_log(f"保持目录结构: {create_subdirs}")
+    write_log(f"{'=' * 50}")
+
+    for i, source_path in enumerate(file_list, 1):
+        try:
+            if not os.path.exists(source_path):
+                write_log(f"[{i}/{len(file_list)}] 跳过: 源文件不存在 - {source_path}")
+                failed_copies.append((source_path, "源文件不存在"))
                 continue
 
-        pbar.close()
+            if create_subdirs:
+                if len(file_list) > 1:
+                    common_path = os.path.commonpath([os.path.dirname(f) for f in file_list])
+                    rel_path = os.path.relpath(source_path, common_path)
+                else:
+                    rel_path = os.path.basename(source_path)
+                dest_path = os.path.join(destination_dir, rel_path)
+            else:
+                dest_path = os.path.join(destination_dir, os.path.basename(source_path))
+
+            write_log(f"[{i}/{len(file_list)}] 正在拷贝: {source_path}")
+            copied_path = copy_file(source_path, dest_path, overwrite=overwrite,
+                                    rename_if_exists=rename_if_exists)
+            successful_copies.append(copied_path)
+            write_log(f"[{i}/{len(file_list)}] 成功: {source_path} -> {copied_path}")
+
+        except FileExistsError as e:
+            write_log(f"[{i}/{len(file_list)}] 跳过: 目标文件已存在 - {source_path}")
+            failed_copies.append((source_path, "目标文件已存在"))
+        except PermissionError as e:
+            write_log(f"[{i}/{len(file_list)}] 失败: 权限错误 - {source_path}")
+            failed_copies.append((source_path, "权限错误"))
+        except Exception as e:
+            write_log(f"[{i}/{len(file_list)}] 失败: {e} - {source_path}")
+            failed_copies.append((source_path, str(e)))
+
+    end_time = time.time()
+
+    write_log(f"\n{'=' * 50}")
+    write_log(f"批量拷贝完成: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    write_log(f"总耗时: {end_time - start_time:.2f}秒")
+    write_log(f"成功: {len(successful_copies)} 个文件")
+    write_log(f"失败: {len(failed_copies)} 个文件")
+    write_log(f"成功率: {len(successful_copies) / len(file_list) * 100:.1f}%" if file_list else "N/A")
+
+    if failed_copies:
+        write_log("\n失败文件列表:")
+        for file_path, error in failed_copies:
+            write_log(f"  - {file_path}: {error}")
+
+    write_log(f"{'=' * 50}\n")
+
+    return successful_copies, failed_copies
 
 
-def copy_file(copy_file_path, copy_des_path):
-    """单个文件拷贝 (以具体名字拷贝到具体路径)"""
-    root_path = os.path.dirname(copy_des_path)
-    os.makedirs(root_path, exist_ok=True)
-    shutil.copy(copy_file_path, copy_des_path)
-    return True
+def move_files(file_list, destination_dir, overwrite=False, rename_if_exists=False,
+               create_subdirs=False, log_file=None):
+    """
+    批量移动文件
+
+    Args:
+        file_list: 文件路径列表
+        destination_dir: 目标目录
+        overwrite: 是否覆盖已存在的目标文件
+        rename_if_exists: 当目标文件已存在时是否重命名
+        create_subdirs: 是否在目标目录中保持源文件的目录结构
+        log_file: 日志文件路径（可选）
+
+    Returns:
+        tuple: (成功移动的文件列表, 失败的文件列表)
+    """
+    successful_moves = []
+    failed_moves = []
+
+    def write_log(message):
+        print(message)
+        if log_file:
+            with open(log_file, 'a', encoding='utf-8') as f:
+                f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - {message}\n")
+
+    import time
+    start_time = time.time()
+
+    write_log(f"\n{'=' * 50}")
+    write_log(f"开始批量移动: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    write_log(f"源文件数量: {len(file_list)}")
+    write_log(f"目标目录: {destination_dir}")
+    write_log(f"覆盖模式: {overwrite}")
+    write_log(f"重命名模式: {rename_if_exists}")
+    write_log(f"保持目录结构: {create_subdirs}")
+    write_log(f"{'=' * 50}")
+
+    for i, source_path in enumerate(file_list, 1):
+        try:
+            if not os.path.exists(source_path):
+                write_log(f"[{i}/{len(file_list)}] 跳过: 源文件不存在 - {source_path}")
+                failed_moves.append((source_path, "源文件不存在"))
+                continue
+
+            if create_subdirs:
+                if len(file_list) > 1:
+                    common_path = os.path.commonpath([os.path.dirname(f) for f in file_list])
+                    rel_path = os.path.relpath(source_path, common_path)
+                else:
+                    rel_path = os.path.basename(source_path)
+                dest_path = os.path.join(destination_dir, rel_path)
+            else:
+                dest_path = os.path.join(destination_dir, os.path.basename(source_path))
+
+            write_log(f"[{i}/{len(file_list)}] 正在移动: {source_path}")
+            moved_path = move_file(source_path, dest_path, overwrite=overwrite,
+                                   rename_if_exists=rename_if_exists)
+            successful_moves.append(moved_path)
+            write_log(f"[{i}/{len(file_list)}] 成功: {source_path} -> {moved_path}")
+
+        except FileExistsError as e:
+            write_log(f"[{i}/{len(file_list)}] 跳过: 目标文件已存在 - {source_path}")
+            failed_moves.append((source_path, "目标文件已存在"))
+        except PermissionError as e:
+            write_log(f"[{i}/{len(file_list)}] 失败: 权限错误 - {source_path}")
+            failed_moves.append((source_path, "权限错误"))
+        except Exception as e:
+            write_log(f"[{i}/{len(file_list)}] 失败: {e} - {source_path}")
+            failed_moves.append((source_path, str(e)))
+
+    end_time = time.time()
+
+    write_log(f"\n{'=' * 50}")
+    write_log(f"批量移动完成: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    write_log(f"总耗时: {end_time - start_time:.2f}秒")
+    write_log(f"成功: {len(successful_moves)} 个文件")
+    write_log(f"失败: {len(failed_moves)} 个文件")
+    write_log(f"成功率: {len(successful_moves) / len(file_list) * 100:.1f}%" if file_list else "N/A")
+
+    if failed_moves:
+        write_log("\n失败文件列表:")
+        for file_path, error in failed_moves:
+            write_log(f"  - {file_path}: {error}")
+
+    write_log(f"{'=' * 50}\n")
+
+    return successful_moves, failed_moves
 
 
-def move_file(move_file_path, move_des_path):
-    """单个文件移动 (以具体名字移动到具体路径)"""
-    root_path = os.path.dirname(move_des_path)
-    os.makedirs(root_path, exist_ok=True)
-    shutil.move(move_file_path, move_des_path)
-    return True
-
-
-def get_missing_files(source_dir: str,
-                      target_dir: str,
-                      source_ext: str = '.jpg',
-                      target_ext: str = '.xml'
-                      ) -> Set[str]:
+def get_missing_files(source_dir: str, target_dir: str, source_ext: str = '.jpg', target_ext: str = '.xml') -> Set[str]:
     """
     找出源目录中存在但目标目录中不存在的文件
 

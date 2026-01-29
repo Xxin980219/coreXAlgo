@@ -2,7 +2,8 @@ import concurrent.futures
 import random
 from threading import RLock
 from typing import Dict
-from ..utils import FTPClient, set_logging
+from .ftp_client import FTPClient
+from .basic import set_logging
 
 
 class MtFtpDownloader:

@@ -19,21 +19,21 @@ utils 模块包含算法开发中常用的基础工具函数和类，旨在提�
 :link: bbox_util
 :link-type: doc
 
-标注文件转换，LabelMe ↔ VOC ↔ YOLO 标注格式互转
+bbox框处理和可视化
 :::
 
 :::{grid-item-card} {octicon}`cloud` Ftp_client
 :link: ftp_client
 :link-type: doc
 
-图像裁剪（支持voc标签）
+FTP客户端下载和上传
 :::
 
 :::{grid-item-card} {octicon}`cache` Mt_db_client
 :link: mt_db_client
 :link-type: doc
 
-xml文件处理
+轻量级多数据库查询客户端
 :::
 
 
@@ -41,14 +41,14 @@ xml文件处理
 :link: mt_ftp_downloader
 :link-type: doc
 
-xml文件处理
+多线程并行下载ftp文件夹的所有文件
 :::
 
 :::{grid-item-card} {octicon}`cloud` Sftp_client
 :link: sftp_client
 :link-type: doc
 
-xml文件处理
+SFTP客户端下载和上传
 :::
 ::::
 
