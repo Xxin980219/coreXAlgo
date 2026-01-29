@@ -1,6 +1,6 @@
 import os
 import xml.etree.ElementTree as ET
-from typing import Dict, List, Optional, Union, Set
+from typing import Dict, List, Optional, Union, Set, Any
 from tqdm import tqdm
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
@@ -23,7 +23,6 @@ class VOCXMLProcessor:
     
     Example:
         >>> # 1. 创建 VOC XML 处理器实例
-        >>> from coreXAlgo.file_processing.voc_xml_deal import VOCXMLProcessor
         >>> processor = VOCXMLProcessor(verbose=True)
         >>> 
         >>> # 2. 更新 XML 文件中的类别名称

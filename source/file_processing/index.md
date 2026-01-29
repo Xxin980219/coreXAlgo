@@ -33,7 +33,7 @@ file_processing 模块为算法开发中常用的文件处理功能函数，特�
 :link: voc_xml_deal
 :link-type: doc
 
-xml文件处理
+VOC XML 标注文件处理器
 :::
 
 :::{grid-item-card} {octicon}`database` Data_preprocessing
@@ -41,6 +41,13 @@ xml文件处理
 :link-type: doc
 
 YOLO数据预处理
+:::
+
+:::{grid-item-card} {octicon}`archive` Archive
+:link: archive
+:link-type: doc
+
+压缩解压管理器
 :::
 ::::
 
@@ -54,4 +61,5 @@ annotation_convert
 image_crop
 voc_xml_deal
 data_preprocessing
+archive
 ```

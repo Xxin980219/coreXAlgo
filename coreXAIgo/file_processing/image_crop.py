@@ -54,7 +54,7 @@ def sliding_crop_image(img, crop_size=None, stride=None):
             - x: 该图像块在原图中的左上角x坐标
             - y: 该图像块在原图中的左上角y坐标
 
-     Example:
+    Example:
         >>> import numpy as np
         >>>
         >>> # 示例1: 基本滑动裁剪

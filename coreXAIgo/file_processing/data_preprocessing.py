@@ -329,10 +329,7 @@ class YOLODataPreprocessor:
         Example:
             >>> # 创建YOLO数据预处理器实例
             >>> preprocessor = YOLODataPreprocessor()
-            >>> 
-            >>> # 导入旋转类型枚举
-            >>> from coreXAlgo.file_processing.data_preprocessing import RotationType, YOLODataPreprocessor
-            >>> 
+            >>>
             >>> # 定义多个数据集配置（使用枚举常量）
             >>> configs = [
             ...     {

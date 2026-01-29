@@ -15,7 +15,7 @@ copyright = '2025, Xiong xin'
 author = 'Xiong xin'
 
 # -- General configuration ---------------------------------------------
-autodoc_mock_imports = ["pymysql", "torch", "cv2", "numpy", "tqdm", "pandas", "paramiko", "matplotlib"]  # 模拟导入，避免报错
+autodoc_mock_imports = ["pymysql", "torch", "cv2", "numpy", "tqdm", "pandas", "paramiko", "matplotlib","lxml"]  # 模拟导入，避免报错
 
 extensions = [
     "sphinx.ext.autodoc",
