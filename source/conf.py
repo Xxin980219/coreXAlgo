@@ -13,9 +13,11 @@ from typing import List, Dict, Any
 
 # Define paths
 project_root = Path(__file__).parent.parent
+package_root = project_root / "coreXAlgo"
 
 # Insert paths to sys.path
 sys.path.insert(0, str(project_root.resolve()))
+sys.path.insert(0, str(package_root.resolve()))
 
 # -- Project information -----------------------------------------------------
 project = 'coreXAlgo'
@@ -121,11 +123,20 @@ autodoc_default_options = {
     "members": True,            # Include all members
     "undoc-members": True,      # Include undocumented members
     "private-members": False,    # Exclude private members
-    "special-members": True,     # Include special members
-    "inherited-members": True,   # Include inherited members
+    "special-members": "__init__",  # Only include __init__ from special members
+    "inherited-members": False,  # Exclude inherited members
     "show-inheritance": True,    # Show inheritance hierarchy
     "ignore-module-all": False,  # Don't ignore __all__
 }
+
+# Skip special members that are not useful for documentation
+def skip_special_members(app, what, name, obj, skip, options):
+    if name.startswith("__") and name not in ["__init__"]:
+        return True
+    return skip
+
+def setup(app):
+    app.connect("autodoc-skip-member", skip_special_members)
 
 # Type hints configuration
 autodoc_typehints = "description"  # Include type hints in descriptions
@@ -144,7 +155,7 @@ html_theme_options: Dict[str, Any] = {
         "text": "coreXAlgo",
     },
     "repository_url": "https://github.com/Xxin980219/coreXAlgo",  # Repository URL
-    "repository_branch": "main",  # Default branch
+    "repository_branch": "master",  # Default branch
     "use_repository_button": True,  # Show repository button
     "use_issues_button": True,      # Show issues button
     "use_download_button": True,    # Show download button
