@@ -48,7 +48,7 @@ FTP客户端下载和上传
 :link: sftp_client
 :link-type: doc
 
-SFTP客户端下载和上传
+SFTP客户端下载和上传，优化了连接稳定性
 :::
 ::::
 

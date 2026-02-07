@@ -4,7 +4,11 @@ import cv2
 import numpy as np
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import List, Dict, Tuple, Optional, TypedDict, Union
+try:
+    from typing import List, Dict, Tuple, Optional, TypedDict, Union
+except ImportError:
+    from typing import List, Dict, Tuple, Optional, Union
+    from typing_extensions import TypedDict
 
 from lxml import etree
 
@@ -614,22 +618,26 @@ class AnnotationConverter:
         >>>     converter.voc_to_yolo_obj(str(xml_file))
     """
 
-    def __init__(self, class_names: List[str] = None, verbose=False):
+    def __init__(self, class_names: List[str] = None, class_mapping: Dict[str, str] = None, verbose=False):
         """
         初始化标注转换器
 
         Args:
             class_names: 类别名称列表，列表索引将作为class_id使用。
                         如果为None，则使用默认类别["object"]
+            class_mapping: 标签映射字典，用于将原始标签映射到目标标签。
+                        例如: {"A": "B"} 表示将标签"A"映射为"B"
+                        如果为None，则不进行映射
 
         Example:
-            >>> # 使用自定义类别列表
-            >>> converter = AnnotationConverter(['person', 'vehicle', 'animal'])
+            >>> # 使用自定义类别列表和标签映射
+            >>> converter = AnnotationConverter(['person', 'vehicle', 'animal'], {"cat": "animal", "dog": "animal"})
             >>>
             >>> # 使用默认类别
             >>> converter = AnnotationConverter()
         """
         self.class_names = class_names if class_names else ["object"]
+        self.class_mapping = class_mapping if class_mapping else {}
         self.verbose = verbose
         self.logger = set_logging("AnnotationConverter", verbose=self.verbose)
         self._image_size_cache = {}  # 图像尺寸缓存
@@ -738,7 +746,7 @@ class AnnotationConverter:
     
     def _validate_label(self, label: str) -> bool:
         """
-        验证标签是否在类别列表中
+        验证标签是否在类别列表中（支持标签映射）
 
         Args:
             label: 要验证的标签
@@ -746,9 +754,15 @@ class AnnotationConverter:
         Returns:
             bool: 标签是否有效
         """
-        if label not in self.class_names:
+        # 应用标签映射
+        mapped_label = self.class_mapping.get(label, label)
+        
+        if mapped_label not in self.class_names:
             if self.verbose:
-                self.logger.warning(f"跳过未知标签 '{label}'")
+                if mapped_label != label:
+                    self.logger.warning(f"跳过未知标签 '{label}' (映射为 '{mapped_label}')")
+                else:
+                    self.logger.warning(f"跳过未知标签 '{label}'")
             return False
         return True
 
@@ -1249,6 +1263,10 @@ class AnnotationConverter:
         # 处理每个多边形
         for shape in data.get('shapes', []):
             label = shape.get('label', '')
+            
+            # 应用标签映射
+            mapped_label = self.class_mapping.get(label, label)
+            
             if not self._validate_label(label):
                 continue
 
@@ -1262,7 +1280,7 @@ class AnnotationConverter:
             try:
                 points_array = np.array(points, dtype=float)
                 normalized_points = (points_array / [img_width, img_height]).flatten().round(6).tolist()
-                yolo_ann.add_annotation(self.class_names.index(label), normalized_points)
+                yolo_ann.add_annotation(self.class_names.index(mapped_label), normalized_points)
             except Exception as e:
                 if self.verbose:
                     self.logger.error(f"坐标归一化失败: {e}")
@@ -1365,10 +1383,14 @@ class AnnotationConverter:
 
         for shape in data['shapes']:
             label = shape['label']
+            
+            # 应用标签映射
+            mapped_label = self.class_mapping.get(label, label)
+            
             if not self._validate_label(label):
                 continue
 
-            class_id = self.class_names.index(label)
+            class_id = self.class_names.index(mapped_label)
             points = shape['points']
 
             # 使用NumPy向量化计算边界框
@@ -1497,6 +1519,10 @@ class AnnotationConverter:
 
         for shape in data['shapes']:
             label = shape['label']
+            
+            # 应用标签映射
+            mapped_label = self.class_mapping.get(label, label)
+            
             if not self._validate_label(label):
                 continue
 
@@ -1509,7 +1535,7 @@ class AnnotationConverter:
                 x_max, y_max = points_array.max(axis=0)
 
                 voc_ann.add_object(
-                    name=label,
+                    name=mapped_label,
                     bbox=[x_min, y_min, x_max, y_max]
                 )
             except Exception as e:
@@ -1684,10 +1710,14 @@ class AnnotationConverter:
 
         for obj in root.findall('object'):
             label = obj.find('name').text
+            
+            # 应用标签映射
+            mapped_label = self.class_mapping.get(label, label)
+            
             if not self._validate_label(label):
                 continue
 
-            class_id = self.class_names.index(label)
+            class_id = self.class_names.index(mapped_label)
 
             bbox = obj.find('bndbox')
             xmin = round(float(bbox.find('xmin').text), 6)
@@ -1944,9 +1974,16 @@ class AnnotationConverter:
             # 处理每个多边形
             for polygon in img_obj.findall("polygon"):
                 label = polygon.attrib.get("label")
-                if label not in cls_names:
+                
+                # 应用标签映射
+                mapped_label = self.class_mapping.get(label, label)
+                
+                if mapped_label not in cls_names:
                     if self.verbose:
-                        self.logger.warning(f"跳过未知标签 '{label}'（图像: {img_name}）")
+                        if mapped_label != label:
+                            self.logger.warning(f"跳过未知标签 '{label}' (映射为 '{mapped_label}')（图像: {img_name}）")
+                        else:
+                            self.logger.warning(f"跳过未知标签 '{label}'（图像: {img_name}）")
                     continue
 
                 # 使用convert_polygon_to_standard_format统一处理
@@ -1963,7 +2000,7 @@ class AnnotationConverter:
                     normalized = (points_array / [img_width, img_height]).flatten().round(6).tolist()
 
                     if len(normalized) >= 6:
-                        yolo_ann.add_annotation(cls_names.index(label), normalized)
+                        yolo_ann.add_annotation(cls_names.index(mapped_label), normalized)
                 except Exception as e:
                     if self.verbose:
                         self.logger.error(f"归一化失败（图像: {img_name}）: {e}")

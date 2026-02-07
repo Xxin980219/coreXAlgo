@@ -18,10 +18,12 @@ from .data_preprocessing import YOLODataPreprocessor, RotationType
 basic_all = [
     'get_files',
     'get_filenames',
-    'extract_large_zip',
-    'zip_folder',
+    'get_duplicate_files',
+    'generate_sequential_filename',
     'copy_file',
     'move_file',
+    'copy_files',
+    'move_files',
     'get_missing_files',
     'randomly_select_files'
 ]
@@ -46,10 +48,6 @@ image_crop_all = [
 ]
 
 voc_xml_deal_all = [
-    'update_xml_categories',
-    'get_images_without_annotations',
-    'get_defect_classes_and_nums',
-    'get_images_with_specific_categories',
     'VOCXMLProcessor'
 ]
 

@@ -5,11 +5,12 @@
 | 项目属性 | 内容         |
 |---------|------------|
 | **项目名称** | coreXAlgo  |
-| **版本号** | 0.4.1      |
+| **版本号** | 0.4.6      |
 | **作者** | Xxin_BOE   |
 | **项目类型** | Python 工具库 |
 | **主要领域** | 计算机视觉、数据处理 |
-| **版权年份** | 2025       |
+| **版权年份** | 2026       |
+| **Python 兼容性** | ≥ 3.8      |
 
 ---
 
@@ -150,8 +151,13 @@ client.upload_file("server1", "./local/file.txt", "/remote/file.txt")
 **核心功能**：
 - 安全的文件传输协议
 - 支持断点续传
-- 多服务器配置
-- 进度监控
+- 多服务器配置和连接池管理
+- 分块传输大文件
+- 并行处理批量文件
+- 详细的进度监控
+- 完善的错误处理和重试机制
+- SSH安全配置优化
+- 支持多种Paramiko版本兼容性
 
 **主要方法**：
 ```python
@@ -166,12 +172,91 @@ sftp_configs = {
     }
 }
 
-client = SFTPClient(sftp_configs, verbose=True)
+# 初始化客户端，启用连接池
+client = SFTPClient(sftp_configs, verbose=True, max_pool_size=10)
+
+# 下载文件
 client.download_file("server1", "/remote/file.txt", "./local/file.txt")
+
+# 上传文件
 client.upload_file("server1", "./local/file.txt", "/remote/file.txt")
+
+# 批量下载（并行处理）
+file_pairs = [
+    ("/remote/file1.txt", "./local/file1.txt"),
+    ("/remote/file2.txt", "./local/file2.txt")
+]
+client.batch_download("server1", file_pairs, workers=4)
+
+# 批量上传（并行处理）
+client.batch_upload("server1", file_pairs, workers=4)
 ```
 
-#### 1.4 常量定义 (constants.py)
+#### 1.4 数据库客户端 (mt_db_client.py)
+
+**核心功能**：
+- 轻量级多数据库查询客户端（仅支持查询操作）
+- 支持多种数据库（MySQL、PostgreSQL、SQLite等）
+- 连接池管理和自动重连
+- 查询结果缓存
+- 数据导出为CSV
+- 表结构操作
+- 详细的错误处理和日志
+- 上下文管理器支持
+- SQLAlchemy版本兼容性修复
+
+**主要方法**：
+| 方法名 | 功能描述 |
+|--------|---------|
+| `query()` | 执行SQL查询并返回结果 |
+| `query_to_dataframe()` | 执行查询并将结果转换为pandas DataFrame |
+| `list_databases()` | 获取所有已配置的数据库名称列表 |
+| `list_tables()` | 获取数据库中的所有表名 |
+| `get_table_schema()` | 获取表的结构信息 |
+| `export_to_csv()` | 执行查询并将结果导出为CSV文件 |
+| `get_database_metadata()` | 获取数据库元数据 |
+
+**代码示例**：
+```python
+from coreXAlgo.utils import MtDBClient
+
+# 配置数据库连接
+db_configs = {
+    "user_db": {
+        "host": "localhost",
+        "port": 3306,
+        "user": "root",
+        "password": "password",
+        "database": "user_management"
+    }
+}
+
+# 创建客户端实例
+client = MtDBClient(db_configs, warm_up=True, enable_cache=True)
+
+# 执行查询
+users = client.query("user_db", "SELECT * FROM users WHERE age > :age", {"age": 18})
+
+# 转换为DataFrame
+df = client.query_to_dataframe("user_db", "SELECT * FROM users")
+
+# 导出为CSV
+rows = client.export_to_csv(
+    "user_db",
+    "SELECT id, name, email FROM users",
+    "users_export.csv"
+)
+
+# 获取表结构
+schema = client.get_table_schema("user_db", "users")
+
+# 上下文管理器使用
+with MtDBClient(db_configs) as client:
+    result = client.query("user_db", "SELECT COUNT(*) FROM users")
+    print(f"用户总数: {result[0]['COUNT(*)']}")
+```
+
+#### 1.5 常量定义 (constants.py)
 
 ```python
 SYSTEM_NAME = "coreXAlgo"
@@ -283,6 +368,13 @@ manager.extract(
 - LabelMe格式（JSON）
 - Pascal VOC格式（XML）
 
+**AnnotationConverter 核心功能**：
+- 支持多种标注格式之间的相互转换
+- 支持标签映射功能，可以将原始标签映射到目标标签
+- 支持批量处理和目录批量转换
+- 支持图像尺寸缓存，提高处理效率
+- 完善的错误处理和日志记录
+
 **主要类**：
 
 ##### YOLOAnnotation
@@ -330,16 +422,28 @@ annotator.save("annotations/001.xml")
 ```python
 from coreXAlgo.file_processing import AnnotationConverter
 
-converter = AnnotationConverter()
+# 初始化转换器，指定类别列表
+converter = AnnotationConverter(['person', 'car', 'dog'])
 
-# YOLO 转 VOC
-converter.yolo_to_voc(yolo_path, voc_path, image_size, class_names)
-
-# VOC 转 YOLO
-converter.voc_to_yolo(voc_path, yolo_path, image_size, class_names)
+# VOC 转 YOLO（仅转换在class_names中的标签）
+converter.voc_to_yolo_obj('voc/001.xml', 'yolo_labels/001.txt')
 
 # LabelMe 转 YOLO
-converter.labelme_to_yolo(labelme_path, yolo_path, class_names)
+converter.labelme_to_yolo_obj('labelme/001.json', 'yolo_labels/001.txt')
+
+# YOLO 转 VOC
+converter.yolo_obj_to_voc('yolo/001.txt', 'image.jpg', 'voc/001.xml')
+
+# LabelMe 转 VOC
+converter.labelme_to_voc('labelme/001.json', 'voc/001.xml')
+
+# 使用标签映射功能
+converter_with_mapping = AnnotationConverter(
+    class_names=['person', 'animal', 'vehicle'],
+    class_mapping={'cat': 'animal', 'dog': 'animal', 'car': 'vehicle', 'bus': 'vehicle'}
+)
+# 这样会将cat和dog映射为animal，car和bus映射为vehicle
+converter_with_mapping.voc_to_yolo_obj('voc/001.xml', 'yolo_labels/001.txt')
 ```
 
 #### 3.4 图像裁剪处理 (image_crop.py)
@@ -445,14 +549,21 @@ preprocessor.batch_process(configs)
 - 提供详细的统计分析功能
 - 支持类别更新和筛选
 - 统一的错误处理和日志记录
+- 支持递归搜索目录中的XML文件
+- 支持获取按类别分组的图片列表
+- 支持获取详细的类别统计信息
 
 **主要方法**：
 | 方法名 | 功能描述 | 参数说明 |
 |--------|---------|--------|
-| `update_categories()` | 更新XML中的类别名称 | xml_path: XML文件路径, source_categories: 旧类别列表, target_categories: 新类别列表 |
-| `get_images_without_annotations()` | 提取无标注的图片 | xml_path: XML文件路径 |
+| `update_categories()` | 更新XML中的类别名称 | xml_path: XML文件路径或目录路径, source_categories: 旧类别列表, target_categories: 新类别列表 |
+| `get_images_without_annotations()` | 提取无标注的图片 | xml_path: XML文件路径或目录路径 |
 | `get_defect_classes_and_nums()` | 统计缺陷类别及数量 | xml_dir: XML文件目录 |
-| `get_images_with_specific_categories()` | 提取包含指定类别的图片 | xml_path: XML文件路径, target_categories: 目标类别 |
+| `get_images_with_specific_categories()` | 提取包含指定类别的图片 | xml_path: XML文件路径或目录路径, target_categories: 目标类别 |
+| `get_all_categories_and_images()` | 解析单个XML文件，返回图片名和类别列表 | xml_path: XML文件路径 |
+| `get_all_categories_and_images_batch()` | 批量解析目录中的所有XML文件 | xml_dir: XML文件目录 |
+| `get_images_by_category()` | 获取按类别分组的图片列表 | xml_dir: XML文件目录 |
+| `get_category_statistics()` | 获取详细的类别统计信息 | xml_dir: XML文件目录 |
 | `batch_process()` | 批量处理XML文件 | xml_dir: XML文件目录, process_func: 处理函数, *args: 位置参数, **kwargs: 关键字参数 |
 | `batch_process_with_threads()` | 多线程批量处理XML文件 | xml_dir: XML文件目录, process_func: 处理函数, *args: 位置参数, max_workers: 最大线程数, **kwargs: 关键字参数 |
 | `get_annotation_statistics()` | 获取标注统计信息 | xml_dir: XML文件目录 |
@@ -482,6 +593,25 @@ results = processor.batch_process_with_threads(
 # 获取详细统计信息
 statistics = processor.get_annotation_statistics('annotations/')
 print(statistics)
+
+# 获取按类别分组的图片列表
+category_images = processor.get_images_by_category('annotations/')
+for category, images in category_images.items():
+    print(f"类别: {category}, 图片数量: {len(images)}")
+
+# 获取详细的类别统计信息
+category_stats = processor.get_category_statistics('annotations/')
+print(f"总类别数: {category_stats['total_categories']}")
+print(f"总图片数: {category_stats['total_images']}")
+print("类别分布:")
+for category, count in category_stats['category_counts'].items():
+    print(f"  {category}: {count} 张图片")
+
+# 批量解析目录中的所有XML文件
+all_data = processor.get_all_categories_and_images_batch('annotations/')
+for xml_path, image_data in all_data.items():
+    for image_name, categories in image_data.items():
+        print(f"文件: {xml_path}, 图片: {image_name}, 类别: {categories}")
 ```
 
 ---
@@ -577,20 +707,33 @@ client.upload_file_visualization("production", "./dataset.zip", "/remote/dataset
 
 ```python
 from coreXAlgo.file_processing import AnnotationConverter
+import os
 
-converter = AnnotationConverter()
+# 初始化转换器，指定类别列表
+class_names = ['person', 'car', 'bicycle']
+converter = AnnotationConverter(class_names)
 
 # 批量转换 VOC 到 YOLO
-import os
 voc_dir = './voc_annotations'
 yolo_dir = './yolo_labels'
-class_names = ['person', 'car', 'bicycle']
+
+# 确保输出目录存在
+os.makedirs(yolo_dir, exist_ok=True)
 
 for xml_file in os.listdir(voc_dir):
     if xml_file.endswith('.xml'):
         voc_path = os.path.join(voc_dir, xml_file)
         yolo_path = os.path.join(yolo_dir, xml_file.replace('.xml', '.txt'))
-        converter.voc_to_yolo(voc_path, yolo_path, (640, 480), class_names)
+        converter.voc_to_yolo_obj(voc_path, yolo_path)
+        print(f"转换完成: {xml_file}")
+
+# 使用标签映射功能进行转换
+converter_with_mapping = AnnotationConverter(
+    class_names=['person', 'animal', 'vehicle'],
+    class_mapping={'cat': 'animal', 'dog': 'animal', 'car': 'vehicle', 'bus': 'vehicle'}
+)
+# 这样会将cat和dog映射为animal，car和bus映射为vehicle
+converter_with_mapping.voc_to_yolo_obj('voc/001.xml', 'yolo_labels/001.txt')
 ```
 
 ### 示例3：目标检测可视化
@@ -738,6 +881,28 @@ for class_name, count in annotation_stats['class_counts'].items():
     print(f"  {class_name}: {count}")
 print(f"无标注文件数: {len(annotation_stats['empty_files'])}")
 
+# 示例6：获取按类别分组的图片列表
+category_images = processor.get_images_by_category('annotations/')
+print("\n按类别分组的图片:")
+for category, images in category_images.items():
+    print(f"  {category}: {len(images)} 张图片")
+
+# 示例7：获取详细的类别统计信息
+category_stats = processor.get_category_statistics('annotations/')
+print("\n详细类别统计:")
+print(f"总类别数: {category_stats['total_categories']}")
+print(f"总图片数: {category_stats['total_images']}")
+print("类别分布:")
+for category, count in category_stats['category_counts'].items():
+    print(f"  {category}: {count} 张图片")
+
+# 示例8：批量解析目录中的所有XML文件
+all_data = processor.get_all_categories_and_images_batch('annotations/')
+print("\n批量解析结果:")
+for xml_path, image_data in all_data.items():
+    for image_name, categories in image_data.items():
+        print(f"  文件: {xml_path}, 图片: {image_name}, 类别: {categories}")
+
 ---
 
 ## ✨ 项目特点总结
@@ -789,6 +954,7 @@ print(f"无标注文件数: {len(annotation_stats['empty_files'])}")
 | **XML处理** | lxml, xml.etree.ElementTree |
 | **几何计算** | shapely |
 | **网络传输** | paramiko (SFTP), ftplib (FTP) |
+| **数据库** | SQLAlchemy |
 | **数据格式** | JSON, YAML, Pickle |
 | **压缩格式** | zipfile, tarfile, py7zr, rarfile |
 | **并发处理** | concurrent.futures |
@@ -867,6 +1033,30 @@ print(f"无标注文件数: {len(annotation_stats['empty_files'])}")
    - 缺陷标注处理
    - 图像裁剪和分类
    - 数据统计分析
+
+5. **跨版本Python环境**
+   - Python 3.8+ 兼容性支持
+   - 旧版本库兼容性修复
+
+## 📝 Python 3.8 兼容性说明
+
+为确保在Python 3.8及以上版本的兼容性，项目做了以下调整：
+
+1. **类型注解兼容性**
+   - 为 `TypedDict` 提供了 `typing_extensions` 回退支持
+   - 为 `Literal` 类型添加了兼容性处理
+
+2. **语法兼容性**
+   - 替换了 walrus 运算符 (`:=`) 为传统 if 语句
+   - 确保所有语法特性兼容Python 3.8
+
+3. **库版本兼容性**
+   - 修复了 SQLAlchemy 导入路径，支持旧版本
+   - 修复了 Paramiko 版本兼容性问题
+
+4. **依赖管理**
+   - 为可选依赖项提供了优雅的降级处理
+   - 确保核心功能在最低支持版本上正常工作
 
 ---
 

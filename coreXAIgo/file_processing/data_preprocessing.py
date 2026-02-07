@@ -183,7 +183,7 @@ class YOLODataPreprocessor:
         except Exception as e:
             self.logger.error(f"处理标签文件时出错 {txt_path}: {e}")
     
-    def rotate_yolo_dataset(self, image_folder: str, label_folder: str, seed: Optional[int] = 42, rotation_type: str = RotationType.CLOCKWISE_90.value, ratio: float = 0.5, backup: bool = True, max_workers: int = 4) -> None:
+    def rotate_yolo_dataset(self, image_folder: str, label_folder: str, seed: Optional[int] = 42, rotation_type: str = RotationType.CLOCKWISE_90.value, ratio: float = 0.5, backup: bool = False, max_workers: int = 4) -> None:
         """
         YOLO数据集旋转功能
         
@@ -329,7 +329,10 @@ class YOLODataPreprocessor:
         Example:
             >>> # 创建YOLO数据预处理器实例
             >>> preprocessor = YOLODataPreprocessor()
-            >>>
+            >>> 
+            >>> # 导入旋转类型枚举
+            >>> from coreXAlgo.file_processing.data_preprocessing import RotationType, YOLODataPreprocessor
+            >>> 
             >>> # 定义多个数据集配置（使用枚举常量）
             >>> configs = [
             ...     {

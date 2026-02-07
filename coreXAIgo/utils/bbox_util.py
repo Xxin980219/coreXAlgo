@@ -1,6 +1,10 @@
 import json
 import os
-from typing import Dict, Tuple, Union, Optional, List, Literal
+try:
+    from typing import Dict, Tuple, Union, Optional, List, Literal
+except ImportError:
+    from typing import Dict, Tuple, Union, Optional, List
+    from typing_extensions import Literal
 
 import cv2
 import numpy as np
@@ -149,7 +153,8 @@ def mask_to_polygons(mask, area_threshold=25):
     polygons = []
     for cnt in contours:
         if cv2.contourArea(cnt) > area_threshold:
-            if poly := cnt_to_polygon(cnt):  # Walrus operator requires Python 3.8+
+            poly = cnt_to_polygon(cnt)
+            if poly:  # Traditional if statement for Python 3.7+
                 polygons.append(poly)
 
     return polygons if polygons else None
