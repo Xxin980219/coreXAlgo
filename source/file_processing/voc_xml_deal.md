@@ -46,6 +46,8 @@ for category, count in stats['category_counts'].items():
     print(f"  {category}: {count} images")
 ```
 
+### API 参考
+
 ```{eval-rst}
 .. automodule:: coreXAlgo.file_processing.voc_xml_deal
    :members:

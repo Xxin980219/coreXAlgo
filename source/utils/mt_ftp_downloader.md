@@ -84,6 +84,8 @@ success_count = downloader.download_files_by_pathlist(
 print(f"成功下载: {success_count} 个文件")
 ```
 
+### API 参考
+
 ```{eval-rst}
 .. automodule:: coreXAlgo.utils.mt_ftp_downloader
    :members:

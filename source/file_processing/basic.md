@@ -81,6 +81,8 @@ filename = generate_sequential_filename('output/', 'image', '.jpg')
 print(f"Generated filename: {filename}")
 ```
 
+### API 参考
+
 ```{eval-rst}
 .. automodule:: coreXAlgo.file_processing.basic
    :members:

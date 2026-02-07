@@ -96,6 +96,8 @@ with FTPClient(ftp_configs) as client:
 # 退出上下文管理器时自动关闭连接
 ```
 
+### API 参考
+
 ```{eval-rst}
 .. automodule:: coreXAlgo.utils.ftp_client
    :members:

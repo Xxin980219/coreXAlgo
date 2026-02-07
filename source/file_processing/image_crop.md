@@ -82,6 +82,8 @@ resized_box = resize_box_to_target(original_box, original_size, target_size)
 print(f"Resized box: {resized_box}")
 ```
 
+### API 参考
+
 ```{eval-rst}
 .. automodule:: coreXAlgo.file_processing.image_crop
    :members:

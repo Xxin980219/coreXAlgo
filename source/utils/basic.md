@@ -106,6 +106,8 @@ failed_indices = thread_pool(process_item, items, workers=4)
 print(f"Failed indices: {failed_indices}")
 ```
 
+## API 参考
+
 ```{eval-rst}
 .. automodule:: coreXAlgo.utils.basic
    :members:

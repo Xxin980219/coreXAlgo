@@ -49,6 +49,8 @@ preprocessor.process()
 print(f"Processed {len(preprocessor.processed_images)} images with 90-degree rotations")
 ```
 
+### API 参考
+
 ```{eval-rst}
 .. automodule:: coreXAlgo.file_processing.data_preprocessing
    :members:

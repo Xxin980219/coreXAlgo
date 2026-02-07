@@ -142,6 +142,8 @@ result = client.query("user_db", "SELECT * FROM users LIMIT 5")
 print(result)
 ```
 
+### API 参考
+
 ```{eval-rst}
 .. automodule:: coreXAlgo.utils.mt_db_client
    :members:

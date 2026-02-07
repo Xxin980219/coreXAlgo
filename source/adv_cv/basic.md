@@ -54,6 +54,8 @@ cv2.waitKey(0)
 cv2.destroyAllWindows()
 ```
 
+## API 参考
+
 ```{eval-rst}
 .. automodule:: coreXAlgo.adv_cv.basic
    :members:

@@ -200,6 +200,8 @@ with SFTPClient(sftp_configs) as client:
 print("连接已自动关闭")
 ```
 
+### API 参考
+
 ```{eval-rst}
 .. automodule:: coreXAlgo.utils.sftp_client
    :members:

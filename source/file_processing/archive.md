@@ -53,6 +53,8 @@ manager = ArchiveManager()
 manager.extract('large_archive.zip', 'output_folder/')
 ```
 
+### API 参考
+
 ```{eval-rst}
 .. automodule:: coreXAlgo.file_processing.archive
    :members:
