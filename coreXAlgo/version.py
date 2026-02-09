@@ -2,6 +2,6 @@
 Copyright (C) 2025 Xxin_BOE
 """
 __all__ = ['__version__']
-__version__ = '0.4.6'
+__version__ = '0.4.8'
 
 

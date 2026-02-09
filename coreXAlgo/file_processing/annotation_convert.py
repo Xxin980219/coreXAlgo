@@ -1,5 +1,7 @@
 import json
 import os
+import cv2
+import numpy as np
 import xml.etree.ElementTree as ET
 from pathlib import Path
 try:
@@ -7,6 +9,8 @@ try:
 except ImportError:
     from typing import List, Dict, Tuple, Optional, Union
     from typing_extensions import TypedDict
+
+from lxml import etree
 
 from ..utils.basic import set_logging
 
@@ -55,8 +59,8 @@ class YOLOAnnotation:
     支持标准的YOLO边界框格式和分割多边形格式，所有坐标值必须为归一化值（0-1范围内）。
 
     YOLO标注格式说明：
-    1. 边界框格式：<class_id> <center_x> <center_y> <width> <height>
-    2. 分割多边形格式：<class_id> <x1> <y1> <x2> <y2> ... <xn> <yn>
+        1. 边界框格式：<class_id> <center_x> <center_y> <width> <height>
+        2. 分割多边形格式：<class_id> <x1> <y1> <x2> <y2> ... <xn> <yn>
 
     Args:
         class_names (List[str]): 类别名称列表，列表索引对应class_id，例如：
@@ -378,7 +382,6 @@ class VOCObject:
             >>> # 跨图像边界的对象（可能需要标记为difficult）
             >>> obj3 = VOCObject("person", [-10, 50, 100, 150], difficult=1)
         """
-        from lxml import etree
         self.root = etree.Element("object")
         self.name: str = name
         self.bbox: List[float] = bbox  # [xmin, ymin, xmax, ymax]
@@ -388,7 +391,6 @@ class VOCObject:
 
     def _build_xml_structure(self):
         """构建VOC XML对象结构"""
-        from lxml import etree
         # 添加名称节点
         name_node = etree.SubElement(self.root, "name")
         name_node.text = self.name
@@ -440,7 +442,7 @@ class VOCObject:
         """
         return etree.tostring(self.root, pretty_print=True, encoding="unicode")
 
-    def to_element(self) -> 'etree._Element':
+    def to_element(self) -> etree._Element:
         """
         返回XML元素对象
 
@@ -481,16 +483,6 @@ class VOCAnnotation:
     """
 
     def __init__(self, image_path: str, image_size: Tuple[int, int], objects: List[VOCObject] = None, verbose: bool = False):
-        """
-        初始化VOC标注器
-
-        Args:
-            image_path: 图像文件路径（绝对或相对路径）
-            image_size: 图像尺寸 (width, height)
-            objects: 预定义对象列表（可选）
-            verbose: 是否启用详细日志（默认False）
-        """
-        from lxml import etree
         self.root = etree.Element("annotation")
         self.image_path = Path(image_path)
         self.image_width, self.image_height = image_size
@@ -502,7 +494,6 @@ class VOCAnnotation:
 
     def _init_xml_structure(self):
         """构建VOC XML基础结构"""
-        from lxml import etree
         # 文件信息
         etree.SubElement(self.root, "folder").text = str(self.image_path.parent.name)
         etree.SubElement(self.root, "filename").text = self.image_path.name

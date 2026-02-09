@@ -37,11 +37,11 @@ FTP客户端下载和上传
 :::
 
 
-:::{grid-item-card} {octicon}`download` Mt_ftp_downloader
-:link: mt_ftp_downloader
+:::{grid-item-card} {octicon}`download` Mt_file_downloader
+:link: mt_file_downloader
 :link-type: doc
 
-多线程并行下载ftp文件夹的所有文件
+多线程并行下载ftp/sftp文件夹的所有文件
 :::
 
 :::{grid-item-card} {octicon}`cloud` Sftp_client
@@ -53,6 +53,7 @@ SFTP客户端下载和上传，优化了连接稳定性
 ::::
 
 
+
 ```{toctree}
 :caption: utils
 :hidden:
@@ -61,6 +62,6 @@ basic
 bbox_util
 ftp_client
 mt_db_client
-mt_ftp_downloader
+mt_file_downloader
 sftp_client
 ```

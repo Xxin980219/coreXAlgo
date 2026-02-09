@@ -1,14 +1,17 @@
 import json
 import os
 try:
-    from typing import Dict, Tuple, Union, Optional, List, Literal, TYPE_CHECKING
+    from typing import Dict, Tuple, Union, Optional, List, Literal
 except ImportError:
     from typing import Dict, Tuple, Union, Optional, List
     from typing_extensions import Literal
-    from typing_extensions import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    import numpy as np
+import cv2
+import numpy as np
+import matplotlib.colors as mplc
+import matplotlib.figure as mplfigure
+import matplotlib.patches as mpatches
+from matplotlib.backends.backend_agg import FigureCanvasAgg
 
 
 def polygon_to_bbox(polygon):
@@ -28,7 +31,6 @@ def polygon_to_bbox(polygon):
         >>> bbox = polygon_to_bbox(polygon)
         >>> print(bbox)  # 输出: [10, 10, 50, 50]
     """
-    import numpy as np
     if len(polygon) < 4:
         raise ValueError("Polygon must have at least 2 points (4 coordinates)")
 
@@ -58,7 +60,6 @@ def cnt_to_polygon(cnt):
         >>> print(polygon)  # 输出简化的多边形坐标
         [10.0, 10.0, 50.0, 10.0, 30.0, 50.0, 10.0, 10.0]
     """
-    import numpy as np
     from shapely import geometry
     from shapely.geometry import Polygon, MultiPolygon
     if not isinstance(cnt, (np.ndarray, list)) or len(cnt) < 3:
@@ -90,7 +91,7 @@ def cnt_to_polygon(cnt):
     return [coord for xy in max_poly.exterior.coords for coord in xy]
 
 
-def mask_to_polygon(mask: 'np.ndarray'):
+def mask_to_polygon(mask: np.ndarray):
     """
     Convert binary mask to polygon coordinates.
 
@@ -109,8 +110,6 @@ def mask_to_polygon(mask: 'np.ndarray'):
         >>> print(f"多边形坐标长度: {len(polygon)}")
         >>> # 可以用于绘制或进一步处理
     """
-    import numpy as np
-    import cv2
     if not isinstance(mask, np.ndarray) or mask.ndim != 2:
         return None
     contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -143,8 +142,6 @@ def mask_to_polygons(mask, area_threshold=25):
         >>> print(f"找到 {len(polygons)} 个多边形")
         >>> # 可以用于批量绘制或分析
     """
-    import numpy as np
-    import cv2
     if not isinstance(mask, np.ndarray) or mask.ndim != 2:
         return None
 
@@ -175,7 +172,6 @@ def merge_boxes_by_expansion(detections, threshold=20):
     Returns:
         合并后的矩形框列表
     """
-    import numpy as np
     if not detections:
         return []
 
@@ -275,7 +271,6 @@ def merge_boxes_by_conditions(detections, merge_threshold=50, touching_threshold
         3. 合并后的置信度取原框中最大值
         4. 通过迭代确保所有可合并的框都被合并
     """
-    import numpy as np
     if not detections:
         return []
 
@@ -553,7 +548,7 @@ class DetectionVisualizer:
     """
 
     COLOR_PALETTE: Dict[str, Tuple[int, int, int]] = {}
-    DEFAULT_FONT = None
+    DEFAULT_FONT = cv2.FONT_HERSHEY_SIMPLEX
     TEXT_COLOR = (255, 255, 255)
     LABEL_BG_ALPHA = 0.6
     SMALL_OBJ_AREA_THRESH = 1000
@@ -565,22 +560,14 @@ class DetectionVisualizer:
         pass
 
     @classmethod
-    def _get_default_font(cls):
-        """获取默认字体"""
-        import cv2
-        if cls.DEFAULT_FONT is None:
-            cls.DEFAULT_FONT = cv2.FONT_HERSHEY_SIMPLEX
-        return cls.DEFAULT_FONT
-
-    @classmethod
     def visualize(
             cls,
-            image: 'np.ndarray',
+            image: np.ndarray,
             detections: List[dict],
             output_path: Optional[str] = None,
             mode: Literal['fast', 'high'] = 'fast',
             **kwargs
-    ) -> 'np.ndarray':
+    ) -> np.ndarray:
         """
         主可视化方法 - 支持新数据格式和多形状绘制
 
@@ -662,7 +649,7 @@ class DetectionVisualizer:
                     raise ValueError(f"第{i}个检测的第{j}个点包含无效坐标")
 
     @classmethod
-    def _render_fast_mode_new(cls, image: 'np.ndarray', detections: List[dict], **kwargs) -> 'np.ndarray':
+    def _render_fast_mode_new(cls, image: np.ndarray, detections: List[dict], **kwargs) -> np.ndarray:
         """快速渲染模式 - 支持新数据格式"""
         rendered_image = image.copy()
 
@@ -688,7 +675,7 @@ class DetectionVisualizer:
         return rendered_image
 
     @classmethod
-    def _draw_rectangle_fast(cls, image: 'np.ndarray', label: str, confidence: float, points: List[List[float]]):
+    def _draw_rectangle_fast(cls, image: np.ndarray, label: str, confidence: float, points: List[List[float]]):
         """快速模式绘制矩形"""
         # 提取坐标点
         x1, y1 = map(int, points[0])
@@ -715,7 +702,7 @@ class DetectionVisualizer:
                              font_scale, text_anchor=text_anchor)
 
     @classmethod
-    def _draw_line_fast(cls, image: 'np.ndarray', label: str, confidence: float, points: List[List[float]]):
+    def _draw_line_fast(cls, image: np.ndarray, label: str, confidence: float, points: List[List[float]]):
         """快速模式绘制线段"""
         # 提取起点和终点
         x1, y1 = map(int, points[0])
@@ -749,7 +736,7 @@ class DetectionVisualizer:
                              font_scale, text_anchor=text_anchor)
 
     @classmethod
-    def _draw_polygon_fast(cls, image: 'np.ndarray', label: str, confidence: float, points: List[List[float]]):
+    def _draw_polygon_fast(cls, image: np.ndarray, label: str, confidence: float, points: List[List[float]]):
         """快速模式绘制多边形"""
         # 转换坐标格式
         points_array = np.array(points, dtype=np.int32).reshape((-1, 1, 2))
@@ -772,7 +759,7 @@ class DetectionVisualizer:
                              font_scale, text_anchor=text_anchor)
 
     @classmethod
-    def _get_smart_label_position(cls, image: 'np.ndarray', points: List[List[float]],
+    def _get_smart_label_position(cls, image: np.ndarray, points: List[List[float]],
                                   shape_type: str) -> Tuple[int, int, str]:
         """
         智能计算标签位置，避免被遮挡
@@ -946,7 +933,7 @@ class DetectionVisualizer:
         return inside
 
     @classmethod
-    def _draw_label_fast(cls, image: 'np.ndarray', label: str, confidence: float,
+    def _draw_label_fast(cls, image: np.ndarray, label: str, confidence: float,
                          x: int, y: int, color: Tuple[int, int, int], font_scale: float,
                          text_anchor: str = 'center'):
         """
@@ -955,7 +942,7 @@ class DetectionVisualizer:
         label_text = f"{label}-{confidence:.2f}" if confidence > 0 else label
 
         (text_width, text_height), baseline = cv2.getTextSize(
-            label_text, cls._get_default_font(), font_scale, 1)
+            label_text, cls.DEFAULT_FONT, font_scale, 1)
 
         # 根据锚点计算文本背景位置
         if text_anchor == 'center':
@@ -994,10 +981,10 @@ class DetectionVisualizer:
         # 绘制文本
         text_y = text_bg_y2 - baseline // 2
         cv2.putText(image, label_text, (text_bg_x1, text_y),
-                    cls._get_default_font(), font_scale, cls.TEXT_COLOR, 1)
+                    cls.DEFAULT_FONT, font_scale, cls.TEXT_COLOR, 1)
 
     @classmethod
-    def _render_high_quality_mode_new(cls, image: 'np.ndarray', detections: List[dict], **kwargs) -> 'np.ndarray':
+    def _render_high_quality_mode_new(cls, image: np.ndarray, detections: List[dict], **kwargs) -> np.ndarray:
         """高质量渲染模式 - 支持新数据格式"""
         height, width = image.shape[:2]
 
@@ -1317,13 +1304,13 @@ class DetectionVisualizer:
         return mplc.to_hex(rgb_color)
 
     @classmethod
-    def _is_valid_bbox(cls, image: 'np.ndarray', x1: int, y1: int, x2: int, y2: int) -> bool:
+    def _is_valid_bbox(cls, image: np.ndarray, x1: int, y1: int, x2: int, y2: int) -> bool:
         """验证边界框坐标有效性"""
         h, w = image.shape[:2]
         return (0 <= x1 < x2 <= w) and (0 <= y1 < y2 <= h)
 
     @classmethod
-    def _save_image(cls, image: 'np.ndarray', path: str):
+    def _save_image(cls, image: np.ndarray, path: str):
         """保存图像到文件"""
         os.makedirs(os.path.dirname(path), exist_ok=True)
         cv2.imwrite(path, image)

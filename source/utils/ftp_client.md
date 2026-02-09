@@ -10,6 +10,10 @@ FTP客户端下载和上传
 - **进度可视化**：提供带进度条的文件传输方法，支持实时进度显示
 - **异常处理**：内置重试机制和错误处理，提高传输稳定性
 - **安全操作**：使用上下文管理器确保连接正确关闭
+- **批量处理**：支持批量文件下载和上传，提供分批处理功能
+- **文件完整性验证**：支持文件传输后的完整性验证
+- **连接保活**：内置NOOP命令发送机制，保持连接活跃
+- **智能重连**：遇到连接错误时自动重新连接
 
 ## 使用示例
 
@@ -77,7 +81,47 @@ client.download_file_list(
     ftp_name="server1",
     remote_path_list=remote_files,
     local_path_list=local_dir,
-    progress_callback=progress_callback
+    progress_callback=progress_callback,
+    batch_size=20,  # 每批处理文件数量
+    max_workers=1    # 工作线程数量
+)
+```
+
+### 文件完整性验证
+
+```python
+# 下载文件并验证完整性
+client.download_file(
+    ftp_name="server1",
+    remote_path="/remote/file.zip",
+    local_path="./local/file.zip",
+    verify_integrity=True  # 启用文件完整性验证
+)
+```
+
+### 断点续传
+
+```python
+# 启用断点续传
+client.download_file(
+    ftp_name="server1",
+    remote_path="/remote/large_file.iso",
+    local_path="./local/large_file.iso",
+    resume=True  # 启用断点续传
+)
+```
+
+### 连接管理参数
+
+```python
+# 配置连接管理参数
+client.download_file_list(
+    ftp_name="server1",
+    remote_path_list=remote_files,
+    local_path_list=local_dir,
+    noop_interval=5,  # NOOP命令间隔
+    max_reconnects=10,  # 最大重连次数
+    batch_reconnect_size=50  # 每批重新连接一次
 )
 ```
 
@@ -96,7 +140,20 @@ with FTPClient(ftp_configs) as client:
 # 退出上下文管理器时自动关闭连接
 ```
 
-### API 参考
+### 错误处理和重试
+
+```python
+# 配置错误处理参数
+client.download_file(
+    ftp_name="server1",
+    remote_path="/remote/file.txt",
+    local_path="./local/file.txt",
+    max_retries=3,  # 最大重试次数
+    retry_delay=1  # 重试延迟
+)
+```
+
+## API参考
 
 ```{eval-rst}
 .. automodule:: coreXAlgo.utils.ftp_client

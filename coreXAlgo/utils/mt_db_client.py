@@ -3,10 +3,14 @@ from typing import Dict, List, Optional, Union, Iterator, Any
 import os
 import time
 import logging
+import pandas as pd
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine
+from sqlalchemy.exc import SQLAlchemyError, OperationalError
 
 # 类型别名
 DBConfig = Dict[str, Any]
-EngineCache = Dict[str, 'Engine']
+EngineCache = Dict[str, Engine]
 QueryCache = Dict[str, tuple]
 
 # 自定义异常类
@@ -107,7 +111,6 @@ class MtDBClient:
                 start_time = time.time()
                 engine = self._get_engine(db_name)
                 # 执行简单查询测试连接
-                from sqlalchemy import text
                 with engine.connect() as conn:
                     conn.execute(text("SELECT 1"))
                 execution_time = time.time() - start_time
@@ -115,7 +118,7 @@ class MtDBClient:
             except Exception as e:
                 self._logger.warning(f"连接预热失败: {db_name} - {e}")
 
-    def _get_engine(self, db_name: str) -> 'Engine':
+    def _get_engine(self, db_name: str) -> Engine:
         """
         获取或创建指定数据库的SQLAlchemy引擎
 
@@ -128,10 +131,6 @@ class MtDBClient:
         Raises:
             ConnectionError: 数据库连接失败时抛出
         """
-        from sqlalchemy import create_engine
-        from sqlalchemy.engine import Engine
-        from sqlalchemy.exc import OperationalError
-        
         if db_name not in self._configs:
             raise ValueError(f"未知数据库: {db_name}，可用数据库: {list(self._configs.keys())}")
 
@@ -362,7 +361,7 @@ class MtDBClient:
             dtype: Optional[Dict[str, Any]] = None,
             columns: Optional[List[str]] = None,
             max_retries: int = 3
-    ) -> Union['pd.DataFrame', Iterator['pd.DataFrame']]:
+    ) -> Union[pd.DataFrame, Iterator[pd.DataFrame]]:
         """
         执行查询并将结果转换为pandas DataFrame
 
@@ -396,9 +395,6 @@ class MtDBClient:
             >>> dtype = {"id": int, "name": str, "created_at": "datetime64[ns]"}
             >>> df = client.query_to_dataframe("user_db", "SELECT * FROM users", dtype=dtype)
         """
-        import pandas as pd
-        from sqlalchemy.exc import OperationalError
-        
         if not sql or not isinstance(sql, str):
             raise ValueError("SQL语句不能为空且必须为字符串")
 

@@ -1,3 +1,5 @@
+import cv2
+import numpy as np
 import os
 import random
 from enum import Enum
@@ -56,7 +58,6 @@ class YOLODataPreprocessor:
         Returns:
             bool: 旋转是否成功
         """
-        import cv2
         # 读取图片 - 内存优化：对于大图片，使用降采样减少内存使用
         try:
             # 尝试使用降采样读取图片，减少内存使用

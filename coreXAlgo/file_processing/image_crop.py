@@ -1,4 +1,5 @@
 import os
+import cv2
 from tqdm import tqdm
 
 from ..utils.basic import set_logging
@@ -53,7 +54,7 @@ def sliding_crop_image(img, crop_size=None, stride=None):
             - x: 该图像块在原图中的左上角x坐标
             - y: 该图像块在原图中的左上角y坐标
 
-    Example:
+     Example:
         >>> import numpy as np
         >>>
         >>> # 示例1: 基本滑动裁剪
@@ -353,7 +354,6 @@ class TaggedImageCrop:
 
     def _save(self, crop_image, cropped_labels, base_filename, crop_index):
         """保存裁剪后的图像和标签"""
-        import cv2
         if not self.save_dir:
             return
 
@@ -422,7 +422,6 @@ class TaggedImageCrop:
                 self.logger.error(f"保存XML失败 {xml_filename}: {e}")
     def _process_image(self, image_path):
         """读取并预处理图像"""
-        import cv2
         # 读取图像
         if not os.path.exists(image_path):
             self.logger.error(f"图像文件不存在: {image_path}")

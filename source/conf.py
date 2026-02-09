@@ -168,7 +168,7 @@ html_theme_options: Dict[str, Any] = {
     "footer_start": [],              # Start footer items
     "footer_end": ["copyright"],     # End footer items
     "show_prev_next": True,          # Show previous/next buttons
-    "show_toc_level": 2,             # Show TOC level
+    "show_toc_level": 3,             # Show TOC level
     "home_page_in_toc": True,        # Include home page in TOC
     "extra_navbar": "",              # Extra navbar content
     "extra_footer": "",              # Extra footer content

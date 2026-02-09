@@ -3,6 +3,9 @@ import os
 import time
 import socket
 from typing import Dict, Callable, Optional, List, Union, Tuple, Any
+import paramiko
+from tqdm import tqdm
+from paramiko.ssh_exception import SSHException, AuthenticationException
 
 from .basic import set_logging
 from .constants import TIMEOUT, RETRY_TIMES
@@ -189,7 +192,7 @@ class SFTPClient:
                 if 'passphrase' in config:
                     config['_passphrase_masked'] = True
 
-    def _create_transport(self, config: dict) -> 'paramiko.Transport':
+    def _create_transport(self, config: dict) -> paramiko.Transport:
         """
         创建优化的Transport连接
 
@@ -199,7 +202,6 @@ class SFTPClient:
         Returns:
             paramiko.Transport: 传输层对象
         """
-        import paramiko
         transport = paramiko.Transport((config['host'], config['port']))
 
         # 优化连接参数，减少MAC校验问题
@@ -249,7 +251,7 @@ class SFTPClient:
 
         return transport
 
-    def _get_connection(self, sftp_name: str, retry_count: int = None) -> Optional['paramiko.SFTPClient']:
+    def _get_connection(self, sftp_name: str, retry_count: int = None) -> Optional[paramiko.SFTPClient]:
         """
         获取SFTP连接，支持自动重连
 
@@ -263,7 +265,6 @@ class SFTPClient:
         Example:
             >>> sftp = client._get_connection("server1")
         """
-        import paramiko
         # 检查连接池大小
         if len(self._connections) > self.max_connections:
             # 关闭最旧的连接
@@ -277,7 +278,7 @@ class SFTPClient:
                 self._connections[sftp_name].listdir('.')
                 self.logger.debug(f"复用现有连接: {sftp_name}")
                 return self._connections[sftp_name]
-            except Exception:
+            except (SSHException, EOFError, socket.error):
                 # 连接已失效，清理
                 self.logger.warning(f"连接已失效，重新连接: {sftp_name}")
                 self._close_connection(sftp_name)
@@ -335,12 +336,21 @@ class SFTPClient:
                 self.logger.info(f"✅ 成功连接到SFTP: {sftp_name}")
                 return sftp
 
-            except Exception as e:
+            except AuthenticationException as e:
+                self.logger.error(f"❌ 认证失败: {e}")
+                return None
+            except (SSHException, EOFError, socket.error) as e:
                 self.logger.warning(f"连接失败 (尝试 {attempt + 1}/{actual_retry_count}): {e}")
                 if attempt < actual_retry_count - 1:
                     time.sleep(2 ** attempt)  # 指数退避
                 else:
                     self.logger.error(f"❌ 无法连接到 {sftp_name}: {e}")
+                    return None
+            except Exception as e:
+                self.logger.error(f"❌ 连接异常: {e}")
+                if attempt < actual_retry_count - 1:
+                    time.sleep(2 ** attempt)
+                else:
                     return None
 
     def _close_connection(self, sftp_name: str):
@@ -608,7 +618,7 @@ class SFTPClient:
                     if os.path.exists(local_path):
                         os.remove(local_path)
 
-            except Exception as e:
+            except (SSHException, EOFError, socket.error, paramiko.SSHException) as e:
                 self.logger.warning(f"下载失败 (尝试 {attempt + 1}/{max_retries}): {e}")
                 if attempt < max_retries - 1:
                     time.sleep(2 ** attempt)
@@ -833,7 +843,7 @@ class SFTPClient:
                         pass
                     raise e
 
-            except Exception as e:
+            except (SSHException, EOFError, socket.error, paramiko.SSHException) as e:
                 self.logger.warning(f"上传失败 (尝试 {attempt + 1}/{max_retries}): {e}")
                 if attempt < max_retries - 1:
                     time.sleep(2 ** attempt)
@@ -1575,7 +1585,7 @@ class SFTPClient:
                         except Exception as remove_error:
                             self.logger.warning(f"删除部分文件失败: {remove_error}")
 
-            except Exception as e:
+            except (SSHException, EOFError, socket.error, paramiko.SSHException) as e:
                 self.logger.warning(f"下载失败 (尝试 {attempt + 1}/{max_retries}): {e}")
                 if attempt < max_retries - 1:
                     time.sleep(2 ** attempt)
@@ -1668,7 +1678,7 @@ class SFTPClient:
                                 pass
                         raise
 
-    def _safe_sftp_op(self, operation: Callable[['paramiko.SFTPClient'], Any], sftp_name: str = None, max_retries: int = 3) -> Optional[Any]:
+    def _safe_sftp_op(self, operation: Callable[[paramiko.SFTPClient], Any], sftp_name: str = None, max_retries: int = 3) -> Optional[Any]:
         """
         带重试机制的SFTP操作封装（内部方法）
         
@@ -1713,7 +1723,7 @@ class SFTPClient:
                 try:
                     result = operation(sftp)
                     return result
-                except Exception as e:
+                except (SSHException, EOFError, socket.error, paramiko.SSHException) as e:
                     self.logger.warning(f'SFTP操作异常 (尝试 {retry + 1}/{max_retries}): {e}')
                     if retry < max_retries - 1:
                         time.sleep(2 ** retry)
@@ -1722,6 +1732,9 @@ class SFTPClient:
                     else:
                         self.logger.error(f'❌ SFTP操作失败: {e}')
                         return None
+                except Exception as e:
+                    self.logger.error(f'❌ 操作执行错误: {e}')
+                    return None
 
             except Exception as e:
                 self.logger.error(f'❌ 连接错误: {e}')

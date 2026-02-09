@@ -5,6 +5,9 @@ import sys
 import pickle
 import yaml
 import random
+import torch
+import numpy as np
+from tqdm import tqdm
 
 
 def colorstr(*input):
@@ -75,8 +78,6 @@ def set_all_seed(seed: int):
     Args:
         seed (int): 随机种子值
     """
-    import torch
-    import numpy as np
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -148,7 +149,6 @@ def print_gpu_memory(device=None, verbose=True):
         >>> mem_stats = print_gpu_memory(verbose=False)
         >>> print(f"Allocated: {mem_stats['allocated']:.2f} GB")
     """
-    import torch
     if device is not None:
         torch.cuda.set_device(device)
     allocated = torch.cuda.memory_allocated() / (1024 ** 3)
@@ -185,7 +185,6 @@ def check_cuda_available():
         >>>     check_cuda_available()
         >>>     raise RuntimeError("CUDA not available")
     """
-    import torch
     print("-" * 60)
     print('CUDA版本:', torch.version.cuda)
     print('Pytorch版本:', torch.__version__)
@@ -399,7 +398,6 @@ def thread_pool(func, items, workers):
         >>>     print(f"Failed to process: {image_files[idx]}")
     """
     import concurrent.futures
-    from tqdm import tqdm
 
     if not hasattr(items, "__getitem__"):
         items = list(items)
