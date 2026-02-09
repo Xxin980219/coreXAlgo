@@ -5,7 +5,7 @@
 | 项目属性 | 内容         |
 |---------|------------|
 | **项目名称** | coreXAlgo  |
-| **版本号** | 0.4.6      |
+| **版本号** | 0.4.8      |
 | **作者** | Xxin_BOE   |
 | **项目类型** | Python 工具库 |
 | **主要领域** | 计算机视觉、数据处理 |
@@ -27,7 +27,7 @@ coreXAlgo/
 │   ├── ftp_client.py       # FTP客户端
 │   ├── sftp_client.py      # SFTP客户端
 │   ├── mt_db_client.py     # 多线程数据库客户端
-│   └── mt_ftp_downloader.py # 多线程FTP下载器
+│   └── mt_file_downloader.py # 多线程文件下载器
 ├── adv_cv/                 # 高级计算机视觉模块
 │   └── basic.py           # 图像处理功能
 └── file_processing/         # 文件处理模块
@@ -144,6 +144,34 @@ ftp_configs = {
 client = FTPClient(ftp_configs, verbose=True)
 client.download_file("server1", "/remote/file.txt", "./local/file.txt")
 client.upload_file("server1", "./local/file.txt", "/remote/file.txt")
+```
+
+##### MTFileDownloader (mt_file_downloader.py)
+
+**核心功能**：
+- 多线程文件下载器，替换了旧的 mt_ftp_downloader.py
+- 支持多种协议的文件下载
+- 多线程并行下载，提高下载速度
+- 断点续传和自动重试机制
+- 进度条显示和回调通知
+- 完善的错误处理和日志记录
+
+**主要方法**：
+```python
+from coreXAlgo.utils import MTFileDownloader
+
+# 初始化下载器
+downloader = MTFileDownloader(max_workers=4, verbose=True)
+
+# 下载单个文件
+downloader.download("ftp://example.com/file.zip", "./local/file.zip")
+
+# 批量下载多个文件
+file_list = [
+    ("ftp://example.com/file1.txt", "./local/file1.txt"),
+    ("ftp://example.com/file2.txt", "./local/file2.txt")
+]
+downloader.batch_download(file_list)
 ```
 
 ##### SFTPClient (sftp_client.py)
@@ -953,7 +981,7 @@ for xml_path, image_data in all_data.items():
 | **进度显示** | tqdm |
 | **XML处理** | lxml, xml.etree.ElementTree |
 | **几何计算** | shapely |
-| **网络传输** | paramiko (SFTP), ftplib (FTP) |
+| **网络传输** | paramiko (SFTP), ftplib (FTP), mt_file_downloader (多线程下载) |
 | **数据库** | SQLAlchemy |
 | **数据格式** | JSON, YAML, Pickle |
 | **压缩格式** | zipfile, tarfile, py7zr, rarfile |
@@ -1078,3 +1106,35 @@ for xml_path, image_data in all_data.items():
 - Python 开发者
 
 这个工具库特别适合用于目标检测、图像分割等计算机视觉项目的数据预处理和标注管理工作，是一个值得学习和使用的优秀开源项目。
+
+---
+
+## 📋 版本更新日志
+
+### 版本 0.4.8
+
+**核心功能优化**：
+1. 重构了文件处理模块，提升了 annotation_convert.py 和 archive.py 的性能
+2. 优化了工具模块，包括 bbox_util.py、ftp_client.py 和 sftp_client.py
+3. 新增了 mt_file_downloader.py 模块，替换了旧的 mt_ftp_downloader.py
+4. 改进了数据库客户端 mt_db_client.py 的查询性能和错误处理
+5. 更新了版本号
+
+**文档更新**：
+1. 同步更新了所有模块的文档文件
+2. 优化了文档结构和内容
+3. 确保文档与代码保持一致
+
+**配置文件**：
+1. 更新了项目配置文件，确保构建和部署的稳定性
+
+### 版本 0.4.7
+
+- 修复了 SQLAlchemy 版本兼容性问题
+- 优化了 FTP/SFTP 客户端的错误处理
+- 改进了目标检测可视化的性能
+
+### 版本 0.4.6
+
+- 初始版本发布
+- 包含核心工具模块、高级计算机视觉模块和文件处理模块
