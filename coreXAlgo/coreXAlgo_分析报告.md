@@ -5,7 +5,7 @@
 | 项目属性 | 内容         |
 |---------|------------|
 | **项目名称** | coreXAlgo  |
-| **版本号** | 0.4.8      |
+| **版本号** | 0.4.9      |
 | **作者** | Xxin_BOE   |
 | **项目类型** | Python 工具库 |
 | **主要领域** | 计算机视觉、数据处理 |
@@ -1110,6 +1110,22 @@ for xml_path, image_data in all_data.items():
 ---
 
 ## 📋 版本更新日志
+
+### 版本 0.4.9
+
+**核心功能优化**：
+1. 修复了 `sftp_client.py` 中下载成功数量统计错误的问题，确保下载结果正确显示
+2. 优化了 `sftp_client.py` 的异常处理逻辑，统一处理各种异常情况
+3. 为 `mt_file_downloader.py` 添加了缺失的 `logging` 模块导入
+4. 改进了 `sftp_client.py` 的连接池管理，实现线程安全的连接池
+5. 优化了 `sftp_client.py` 的文件完整性验证，支持 MD5/SHA1 哈希校验
+
+**文档更新**：
+1. 同步更新了 `source/utils/mt_file_downloader.md` 和 `source/utils/sftp_client.md` 文档
+2. 确保文档与代码保持一致
+
+**配置文件**：
+1. 更新了版本号
 
 ### 版本 0.4.8
 

@@ -2,6 +2,7 @@ import io
 import os
 import time
 import socket
+import threading
 from typing import Dict, Callable, Optional, List, Union, Tuple, Any
 import paramiko
 from tqdm import tqdm
@@ -124,6 +125,7 @@ class SFTPClient:
         self.logger = set_logging("SFTPClient", verbose=verbose)
         self.max_connections = max_connections
         self._current_sftp_name = None
+        self._lock = threading.RLock()  # 线程安全锁，支持递归调用
         
         # 验证和标准化配置
         if not sftp_configs:
@@ -265,32 +267,33 @@ class SFTPClient:
         Example:
             >>> sftp = client._get_connection("server1")
         """
-        # 检查连接池大小
-        if len(self._connections) > self.max_connections:
-            # 关闭最旧的连接
-            oldest_name = next(iter(self._connections))
-            self.logger.info(f"连接池已满，关闭最旧的连接: {oldest_name}")
-            self._close_connection(oldest_name)
+        with self._lock:
+            # 检查连接池大小
+            if len(self._connections) > self.max_connections:
+                # 关闭最旧的连接
+                oldest_name = next(iter(self._connections))
+                self.logger.info(f"连接池已满，关闭最旧的连接: {oldest_name}")
+                self._close_connection(oldest_name)
 
-        if sftp_name in self._connections:
-            try:
-                # 测试连接是否有效
-                self._connections[sftp_name].listdir('.')
-                self.logger.debug(f"复用现有连接: {sftp_name}")
-                return self._connections[sftp_name]
-            except (SSHException, EOFError, socket.error):
-                # 连接已失效，清理
-                self.logger.warning(f"连接已失效，重新连接: {sftp_name}")
-                self._close_connection(sftp_name)
+            if sftp_name in self._connections:
+                try:
+                    # 测试连接是否有效
+                    self._connections[sftp_name].listdir('.')
+                    self.logger.debug(f"复用现有连接: {sftp_name}")
+                    return self._connections[sftp_name]
+                except (SSHException, EOFError, socket.error):
+                    # 连接已失效，清理
+                    self.logger.warning(f"连接已失效，重新连接: {sftp_name}")
+                    self._close_connection(sftp_name)
 
-        if sftp_name not in self._configs:
-            self.logger.error(f"SFTP配置 '{sftp_name}' 不存在")
-            return None
+            if sftp_name not in self._configs:
+                self.logger.error(f"SFTP配置 '{sftp_name}' 不存在")
+                return None
 
-        config = self._configs[sftp_name]
+            config = self._configs[sftp_name]
 
-        # 使用配置中的重试次数或默认值
-        actual_retry_count = retry_count if retry_count is not None else config.get('retry_times', 3)
+            # 使用配置中的重试次数或默认值
+            actual_retry_count = retry_count if retry_count is not None else config.get('retry_times', 3)
 
         for attempt in range(actual_retry_count):
             try:
@@ -317,9 +320,9 @@ class SFTPClient:
                 # 尝试设置缓冲区大小（兼容不同版本的paramiko）
                 try:
                     if hasattr(sftp.get_channel(), 'set_buff_size'):
-                        sftp.get_channel().set_buff_size(32768)  # 32KB缓冲区
+                        sftp.get_channel().set_buff_size(65536)  # 64KB缓冲区，提高传输速度
                     elif hasattr(sftp.get_channel(), 'set_buffer_size'):
-                        sftp.get_channel().set_buffer_size(32768)  # 32KB缓冲区
+                        sftp.get_channel().set_buffer_size(65536)  # 64KB缓冲区，提高传输速度
                     else:
                         self.logger.debug("当前paramiko版本不支持设置缓冲区大小")
                 except Exception as e:
@@ -328,10 +331,11 @@ class SFTPClient:
                 # 测试连接
                 sftp.listdir('.')
 
-                # 保存连接
-                self._connections[sftp_name] = sftp
-                self._transports[sftp_name] = transport
-                self._current_sftp_name = sftp_name
+                with self._lock:
+                    # 保存连接
+                    self._connections[sftp_name] = sftp
+                    self._transports[sftp_name] = transport
+                    self._current_sftp_name = sftp_name
 
                 self.logger.info(f"✅ 成功连接到SFTP: {sftp_name}")
                 return sftp
@@ -355,21 +359,22 @@ class SFTPClient:
 
     def _close_connection(self, sftp_name: str):
         """关闭指定连接"""
-        if sftp_name in self._connections:
-            try:
-                self._connections[sftp_name].close()
-            except:
-                pass
-            finally:
-                del self._connections[sftp_name]
+        with self._lock:
+            if sftp_name in self._connections:
+                try:
+                    self._connections[sftp_name].close()
+                except:
+                    pass
+                finally:
+                    del self._connections[sftp_name]
 
-        if sftp_name in self._transports:
-            try:
-                self._transports[sftp_name].close()
-            except:
-                pass
-            finally:
-                del self._transports[sftp_name]
+            if sftp_name in self._transports:
+                try:
+                    self._transports[sftp_name].close()
+                except:
+                    pass
+                finally:
+                    del self._transports[sftp_name]
 
     def close(self):
         """
@@ -378,8 +383,9 @@ class SFTPClient:
         Example:
             >>> client.close()
         """
-        for sftp_name in list(self._connections.keys()):
-            self._close_connection(sftp_name)
+        with self._lock:
+            for sftp_name in list(self._connections.keys()):
+                self._close_connection(sftp_name)
 
     def is_connected(self, sftp_name: str) -> bool:
         """
@@ -618,13 +624,12 @@ class SFTPClient:
                     if os.path.exists(local_path):
                         os.remove(local_path)
 
-            except (SSHException, EOFError, socket.error, paramiko.SSHException) as e:
-                self.logger.warning(f"下载失败 (尝试 {attempt + 1}/{max_retries}): {e}")
-                if attempt < max_retries - 1:
-                    time.sleep(2 ** attempt)
+            except Exception as e:
+                # 使用统一的异常处理方法
+                should_retry = self._handle_exception(e, "下载", remote_path, attempt, max_retries)
+                if should_retry:
                     self._close_connection(sftp_name)
                 else:
-                    self.logger.error(f"❌ 下载失败达到最大重试次数: {remote_path}")
                     # 下载失败时删除部分文件
                     if os.path.exists(local_path):
                         try:
@@ -632,39 +637,10 @@ class SFTPClient:
                             self.logger.info(f"已删除部分下载的文件: {local_path}")
                         except Exception as remove_error:
                             self.logger.warning(f"删除部分文件失败: {remove_error}")
-            except Exception as e:
-                self.logger.error(f"❌ 下载异常: {e}")
-                # 异常时删除部分文件
-                if os.path.exists(local_path):
-                    try:
-                        os.remove(local_path)
-                        self.logger.info(f"已删除部分下载的文件: {local_path}")
-                    except Exception as remove_error:
-                        self.logger.warning(f"删除部分文件失败: {remove_error}")
-                break
+                    if not isinstance(e, (SSHException, EOFError, socket.error, paramiko.SSHException)):
+                        break
 
         return False
-
-    def download_single_file(self, sftp_name: str, remote_path: str, local_path: str) -> bool:
-        """
-        下载单个文件（简单版本）
-
-        Args:
-            sftp_name (str): SFTP配置名称
-            remote_path (str): 远程文件路径
-            local_path (str): 本地保存路径
-
-        Returns:
-            bool: 是否下载成功
-
-        Example:
-            >>> success = client.download_single_file(
-            ...     sftp_name="server1",
-            ...     remote_path="/remote/config.ini",
-            ...     local_path="/local/config.ini"
-            ... )
-        """
-        return self.download_file(sftp_name, remote_path, local_path, max_retries=1)
 
     def download_file_list(self, sftp_name: str, remote_path_list: List[str],
                            local_path_list: Union[str, List[str]],
@@ -831,6 +807,26 @@ class SFTPClient:
                 try:
                     temp_size = sftp.stat(temp_path).st_size
                     if temp_size == local_size:
+                        # 可选：使用哈希值进一步验证文件完整性
+                        try:
+                            # 计算本地文件哈希值
+                            local_hash = self._calculate_file_hash(local_path)
+                            if local_hash:
+                                # 计算远程临时文件哈希值
+                                remote_hash = self._calculate_remote_file_hash(sftp, temp_path)
+                                if remote_hash:
+                                    if local_hash == remote_hash:
+                                        self.logger.info(f"文件哈希值验证通过: {os.path.basename(remote_path)}")
+                                        sftp.rename(temp_path, remote_path)
+                                        self.logger.info(f"✅ 文件上传成功: {remote_path}")
+                                        return True
+                                    else:
+                                        raise RuntimeError(f"文件哈希值不匹配: 本地={local_hash}, 远程={remote_hash}")
+                        except Exception as hash_error:
+                            # 哈希值验证失败，仅使用大小验证
+                            self.logger.warning(f"文件哈希值验证失败: {hash_error}，仅使用大小验证")
+                            
+                        # 大小验证通过，重命名文件
                         sftp.rename(temp_path, remote_path)
                         self.logger.info(f"✅ 文件上传成功: {remote_path}")
                         return True
@@ -843,13 +839,12 @@ class SFTPClient:
                         pass
                     raise e
 
-            except (SSHException, EOFError, socket.error, paramiko.SSHException) as e:
-                self.logger.warning(f"上传失败 (尝试 {attempt + 1}/{max_retries}): {e}")
-                if attempt < max_retries - 1:
-                    time.sleep(2 ** attempt)
+            except Exception as e:
+                # 使用统一的异常处理方法
+                should_retry = self._handle_exception(e, "上传", local_path, attempt, max_retries)
+                if should_retry:
                     self._close_connection(sftp_name)
                 else:
-                    self.logger.error(f"❌ 上传失败达到最大重试次数: {local_path}")
                     # 清理临时文件
                     try:
                         sftp = self._get_connection(sftp_name)
@@ -859,18 +854,8 @@ class SFTPClient:
                                 self.logger.info(f"已清理临时文件: {temp_path}")
                     except Exception as cleanup_error:
                         self.logger.warning(f"清理临时文件失败: {cleanup_error}")
-            except Exception as e:
-                self.logger.error(f"❌ 上传异常: {e}")
-                # 清理临时文件
-                try:
-                    sftp = self._get_connection(sftp_name)
-                    if sftp:
-                        if self._file_exists(temp_path, sftp_name):
-                            sftp.remove(temp_path)
-                            self.logger.info(f"已清理临时文件: {temp_path}")
-                except Exception as cleanup_error:
-                    self.logger.warning(f"清理临时文件失败: {cleanup_error}")
-                break
+                    if not isinstance(e, (SSHException, EOFError, socket.error, paramiko.SSHException)):
+                        break
 
         return False
 
@@ -1353,6 +1338,9 @@ class SFTPClient:
                 sftp_name, batch, batch_start, total_files, progress_callback, max_workers
             )
 
+            # 累计成功下载数量
+            success_count += batch_success
+            
             # 将本批次失败的文件添加到总失败列表
             failed_files.extend(batch_failed)
 
@@ -1466,6 +1454,8 @@ class SFTPClient:
 
         return retry_success
 
+
+
     def _process_single_download(self, sftp_name: str, remote_path: str, local_path: str,
                                 file_idx: int, total_files: int, progress_callback: Optional[Callable] = None) -> bool:
         """
@@ -1567,15 +1557,43 @@ class SFTPClient:
                 with open(local_path, 'ab' if downloaded > 0 else 'wb') as f:
                     if downloaded > 0:
                         # 断点续传
+                        self.logger.info(f"开始断点续传: {os.path.basename(remote_path)} (已下载 {downloaded}/{remote_size} 字节)")
                         sftp.getfo(remote_path, f, downloaded)
                     else:
-                        # 全新下载
-                        sftp.get(remote_path, local_path)
+                        # 全新下载 - 使用 getfo 方法，与断点续传保持一致
+                        self.logger.info(f"开始全新下载: {os.path.basename(remote_path)} (总大小: {remote_size} 字节)")
+                        sftp.getfo(remote_path, f)
 
                 # 验证文件完整性
                 final_size = os.path.getsize(local_path)
                 if final_size == remote_size:
-                    return True
+                    # 可选：使用哈希值进一步验证文件完整性
+                    try:
+                        # 计算本地文件哈希值
+                        local_hash = self._calculate_file_hash(local_path)
+                        if local_hash:
+                            # 计算远程文件哈希值
+                            remote_hash = self._calculate_remote_file_hash(sftp, remote_path)
+                            if remote_hash:
+                                if local_hash == remote_hash:
+                                    self.logger.info(f"文件哈希值验证通过: {os.path.basename(remote_path)}")
+                                    return True
+                                else:
+                                    self.logger.error(f"文件哈希值不匹配: 本地={local_hash}, 远程={remote_hash}")
+                                    if os.path.exists(local_path):
+                                        try:
+                                            os.remove(local_path)
+                                            self.logger.info(f"已删除哈希值不匹配的文件: {local_path}")
+                                        except Exception as remove_error:
+                                            self.logger.warning(f"删除文件失败: {remove_error}")
+                            else:
+                                # 远程哈希值计算失败，仅使用大小验证
+                                self.logger.warning("远程文件哈希值计算失败，仅使用大小验证")
+                                return True
+                    except Exception as e:
+                        # 哈希值验证失败，仅使用大小验证
+                        self.logger.warning(f"文件哈希值验证失败: {e}，仅使用大小验证")
+                        return True
                 else:
                     self.logger.error(f"文件大小不匹配: {final_size}/{remote_size}")
                     if os.path.exists(local_path):
@@ -1585,13 +1603,12 @@ class SFTPClient:
                         except Exception as remove_error:
                             self.logger.warning(f"删除部分文件失败: {remove_error}")
 
-            except (SSHException, EOFError, socket.error, paramiko.SSHException) as e:
-                self.logger.warning(f"下载失败 (尝试 {attempt + 1}/{max_retries}): {e}")
-                if attempt < max_retries - 1:
-                    time.sleep(2 ** attempt)
+            except Exception as e:
+                # 使用统一的异常处理方法
+                should_retry = self._handle_exception(e, "下载", remote_path, attempt, max_retries)
+                if should_retry:
                     self._close_connection(sftp_name)
                 else:
-                    self.logger.error(f"❌ 下载失败达到最大重试次数: {remote_path}")
                     # 下载失败时删除部分文件
                     if os.path.exists(local_path):
                         try:
@@ -1599,16 +1616,8 @@ class SFTPClient:
                             self.logger.info(f"已删除部分下载的文件: {local_path}")
                         except Exception as remove_error:
                             self.logger.warning(f"删除部分文件失败: {remove_error}")
-            except Exception as e:
-                self.logger.error(f"❌ 下载异常: {e}")
-                # 异常时删除部分文件
-                if os.path.exists(local_path):
-                    try:
-                        os.remove(local_path)
-                        self.logger.info(f"已删除部分下载的文件: {local_path}")
-                    except Exception as remove_error:
-                        self.logger.warning(f"删除部分文件失败: {remove_error}")
-                break
+                    if not isinstance(e, (SSHException, EOFError, socket.error, paramiko.SSHException)):
+                        break
 
         return False
 
@@ -1677,6 +1686,102 @@ class SFTPClient:
                             except:
                                 pass
                         raise
+
+    def _calculate_file_hash(self, file_path: str, hash_algorithm: str = 'md5') -> Optional[str]:
+        """
+        计算文件的哈希值
+
+        Args:
+            file_path (str): 文件路径
+            hash_algorithm (str, optional): 哈希算法，支持 'md5' 或 'sha1'，默认为 'md5'
+
+        Returns:
+            Optional[str]: 文件的哈希值或None（如果计算失败）
+        """
+        import hashlib
+
+        if not os.path.exists(file_path):
+            self.logger.error(f"文件不存在: {file_path}")
+            return None
+
+        try:
+            if hash_algorithm.lower() == 'md5':
+                hash_obj = hashlib.md5()
+            elif hash_algorithm.lower() == 'sha1':
+                hash_obj = hashlib.sha1()
+            else:
+                self.logger.error(f"不支持的哈希算法: {hash_algorithm}")
+                return None
+
+            with open(file_path, 'rb') as f:
+                while chunk := f.read(8192 * 10):  # 80KB chunks
+                    hash_obj.update(chunk)
+
+            return hash_obj.hexdigest()
+        except Exception as e:
+            self.logger.error(f"计算文件哈希值失败: {e}")
+            return None
+
+    def _calculate_remote_file_hash(self, sftp: paramiko.SFTPClient, remote_path: str, hash_algorithm: str = 'md5') -> Optional[str]:
+        """
+        计算远程文件的哈希值
+
+        Args:
+            sftp (paramiko.SFTPClient): SFTP客户端
+            remote_path (str): 远程文件路径
+            hash_algorithm (str, optional): 哈希算法，支持 'md5' 或 'sha1'，默认为 'md5'
+
+        Returns:
+            Optional[str]: 远程文件的哈希值或None（如果计算失败）
+        """
+        import hashlib
+
+        try:
+            if hash_algorithm.lower() == 'md5':
+                hash_obj = hashlib.md5()
+            elif hash_algorithm.lower() == 'sha1':
+                hash_obj = hashlib.sha1()
+            else:
+                self.logger.error(f"不支持的哈希算法: {hash_algorithm}")
+                return None
+
+            with sftp.open(remote_path, 'rb') as f:
+                while chunk := f.read(8192 * 10):  # 80KB chunks
+                    hash_obj.update(chunk)
+
+            return hash_obj.hexdigest()
+        except Exception as e:
+            self.logger.error(f"计算远程文件哈希值失败: {e}")
+            return None
+
+    def _handle_exception(self, e: Exception, operation: str, file_path: str, attempt: int, max_retries: int) -> bool:
+        """
+        统一处理异常情况
+
+        Args:
+            e (Exception): 捕获到的异常
+            operation (str): 操作类型，如 'download' 或 'upload'
+            file_path (str): 文件路径
+            attempt (int): 当前尝试次数
+            max_retries (int): 最大重试次数
+
+        Returns:
+            bool: 是否应该继续重试
+        """
+        # 检查是否是网络相关异常
+        is_network_error = isinstance(e, (SSHException, EOFError, socket.error, paramiko.SSHException))
+        
+        if is_network_error:
+            self.logger.warning(f"{operation}失败 (尝试 {attempt + 1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                time.sleep(2 ** attempt)
+                return True  # 继续重试
+            else:
+                self.logger.error(f"❌ {operation}失败达到最大重试次数: {file_path}")
+                return False  # 停止重试
+        else:
+            self.logger.error(f"❌ {operation}异常: {e}")
+            return False  # 非网络异常，直接停止重试
 
     def _safe_sftp_op(self, operation: Callable[[paramiko.SFTPClient], Any], sftp_name: str = None, max_retries: int = 3) -> Optional[Any]:
         """

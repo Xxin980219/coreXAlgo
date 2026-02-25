@@ -1,4 +1,5 @@
 import concurrent.futures
+import logging
 import os
 import random
 import time
@@ -841,7 +842,7 @@ class MtFileDownloader:
     def download_files_by_pathlist(self, server_name, local_path_list, max_download_num=None, remote_dir=None,
                                    file_path_list=None, shuffle=False, callback=None, batch_size=20):
         """
-        多线程下载FTP/SFTP文件列表
+        下载FTP/SFTP文件列表
 
         Args:
             server_name (str): 服务器配置名称，必须在初始化时提供的configs中
@@ -949,8 +950,6 @@ class MtFileDownloader:
         Notes:
             - remote_dir 和 file_path_list 参数二选一，不能同时使用
             - 如果同时提供 remote_dir 和 file_path_list，优先使用 file_path_list
-            - 使用多线程时，每个线程会创建独立的连接
-            - 每个线程内部会使用指定的 batch_size 进行分批处理
             - 服务器配置必须在初始化时提供，不支持运行时修改
         """
         if batch_size <= 0:
@@ -988,102 +987,318 @@ class MtFileDownloader:
             file_list = file_list[:max_download_num]
         total_files = len(file_list)
 
-        # 将文件列表分配给各个工作线程
-        worker_file_list = [file_list[i::self._workers] for i in range(self._workers)]
-        worker_percent = [0 for _ in range(self._workers)]
+        # 创建客户端连接
+        client = None
+        success_count = 0
 
-        # 处理local_path_list，为每个工作线程创建对应的本地路径列表
-        worker_local_path_list = []
-        if isinstance(local_path_list, list):
-            # 当local_path_list是列表时，为每个工作线程创建对应的子列表
-            for worker_id in range(self._workers):
-                # 获取该工作线程处理的文件索引
-                worker_indices = [i for i in range(len(file_list)) if i % self._workers == worker_id]
-                # 根据索引创建对应的本地路径子列表
-                worker_local_paths = [local_path_list[i] for i in worker_indices]
-                worker_local_path_list.append(worker_local_paths)
-        else:
-            # 当local_path_list是字符串时，所有线程使用相同的路径
-            worker_local_path_list = [local_path_list for _ in range(self._workers)]
+        try:
+            if server_type == 'sftp':
+                client = SFTPClient(self._configs)
+                # 下载文件列表
+                success_count = client.download_file_list(
+                    sftp_name=server_name,
+                    remote_path_list=file_list,
+                    local_path_list=local_path_list,
+                    progress_callback=lambda p, t, n: self._handle_callback(callback, p, t, n),
+                    batch_size=batch_size
+                )
+                # 处理返回值格式
+                if isinstance(success_count, tuple):
+                    success_count = success_count[0]
+            else:
+                client = FTPClient(self._configs)
+                client._ftpconnect(server_name)
+                # 下载文件列表
+                success_count = client.download_file_list(
+                    ftp_name=server_name,
+                    remote_path_list=file_list,
+                    local_path_list=local_path_list,
+                    bufsize=1024,
+                    progress_callback=lambda p, t, n: self._handle_callback(callback, p, t, n),
+                    batch_size=batch_size
+                )
 
-        def _atomic_callback(worker_index, percent, current=None, total=None, name=None):
-            """原子化的进度回调，确保线程安全"""
-            with self._lock:
-                worker_percent[worker_index] = percent
-                if callback:
-                    try:
-                        # 尝试作为三参数回调调用
-                        callback(current, total, name)
-                    except TypeError:
-                        # 如果失败，作为单参数回调调用
-                        overall_progress = sum(worker_percent) / self._workers
-                        callback(int(overall_progress))
+            self.logger.info(f"下载完成: {success_count}/{total_files} 个文件")
 
-        # 创建线程池执行下载任务
-        with concurrent.futures.ThreadPoolExecutor(max_workers=self._workers) as executor:
-            futures = []
-            clients = []
-
-            try:
-                # 为每个工作线程创建独立的客户端连接
-                for worker_id in range(self._workers):
-                    if server_type == 'sftp':
-                        client = SFTPClient(self._configs)
-                        # SFTP客户端不需要显式连接，_get_connection会自动处理
-                        clients.append(client)
-
-                        # 提交下载任务到线程池
-                        future = executor.submit(
-                            client.download_file_list,
-                            sftp_name=server_name,
-                            remote_path_list=worker_file_list[worker_id],
-                            local_path_list=worker_local_path_list[worker_id],
-                            progress_callback=lambda p, t, n: _atomic_callback(worker_id, p / t * 100, p, t, n),
-                            batch_size=batch_size
-                        )
-                    else:
-                        client = FTPClient(self._configs)
-                        client._ftpconnect(server_name)
-                        clients.append(client)
-
-                        # 提交下载任务到线程池
-                        future = executor.submit(
-                            client.download_file_list,
-                            ftp_name=server_name,
-                            remote_path_list=worker_file_list[worker_id],
-                            local_path_list=worker_local_path_list[worker_id],
-                            bufsize=1024,
-                            progress_callback=lambda p, t, n: _atomic_callback(worker_id, p / t * 100, p, t, n),
-                            batch_size=batch_size
-                        )
-                    futures.append(future)
-
-                # 等待所有任务完成并统计成功数量
-                success_count = 0
-                for future in futures:
-                    result = future.result()
-                    # 处理不同客户端的返回值格式
-                    if isinstance(result, tuple):
-                        # SFTP客户端返回 (成功数, 总数)
-                        success_count += result[0]
-                    else:
-                        # FTP客户端返回成功数
-                        success_count += result
-
-                self.logger.info(f"下载完成: {success_count}/{total_files} 个文件")
-
-            except Exception as e:
-                self.logger.error(f"下载过程中发生错误: {str(e)}")
-                raise RuntimeError(f"文件下载失败: {str(e)}")
-            finally:
-                # 确保所有客户端连接正确关闭
-                for client in clients:
-                    try:
-                        if hasattr(client, 'close'):
-                            client.close()
-                        elif hasattr(client, '_close'):
-                            client._close()
-                    except Exception as e:
-                        self.logger.warning(f"关闭连接时出错: {str(e)}")
+        except Exception as e:
+            self.logger.error(f"下载过程中发生错误: {str(e)}")
+            raise RuntimeError(f"文件下载失败: {str(e)}")
+        finally:
+            # 确保客户端连接正确关闭
+            if client:
+                try:
+                    if hasattr(client, 'close'):
+                        client.close()
+                    elif hasattr(client, '_close'):
+                        client._close()
+                except Exception as e:
+                    self.logger.warning(f"关闭连接时出错: {str(e)}")
 
         return success_count
+
+    def _handle_callback(self, callback, current, total, name):
+        """
+        处理回调函数
+        
+        Args:
+            callback: 回调函数
+            current: 当前进度
+            total: 总进度
+            name: 文件名称
+        """
+        if callback:
+            try:
+                # 尝试作为三参数回调调用
+                callback(current, total, name)
+            except TypeError:
+                # 如果失败，作为单参数回调调用
+                progress = int(current / total * 100)
+                callback(progress)
+    
+    def parallel_download_by_instances(self, server_name, local_path_list, max_download_num=None, 
+                                     remote_dir=None, file_path_list=None, shuffle=False, 
+                                     callback=None, batch_size=20, num_instances=4, 
+                                     workers_per_instance=2):
+        """
+        使用多个下载器实例并行下载文件
+        
+        Args:
+            server_name (str): 服务器配置名称，必须在初始化时提供的configs中
+            local_path_list (Union[str, List[str]]): 本地保存路径，可以是：
+                - str: 所有文件保存到该目录，文件名保持远程文件名
+                - list: 每个文件对应的完整本地保存路径，长度必须与文件列表一致
+            max_download_num (int, optional): 最大下载数量，默认为None（下载所有文件）
+            remote_dir (str, optional): 要下载的远程目录路径，如果提供则下载该目录下所有文件
+            file_path_list (List[str], optional): 预定义的文件路径列表，如果提供则直接下载这些文件
+            shuffle (bool, optional): 是否随机打乱文件顺序，默认为False
+            callback (Callable, optional): 进度回调函数，支持两种格式：
+                - Callable[[int], None]: 接收一个整数参数（0-100）表示总体进度
+                - Callable[[int, int, str], None]: 接收三个参数(current, total, name)表示当前文件进度
+            batch_size (int, optional): 每批处理文件数，默认为20
+            num_instances (int, optional): 下载器实例数量，默认为4
+            workers_per_instance (int, optional): 每个下载器实例的工作线程数，默认为2
+        
+        Returns:
+            int: 成功下载的文件数量
+        
+        Raises:
+            ValueError: 当服务器配置不存在或参数不合法时
+            RuntimeError: 当下载过程中发生错误时
+        
+        Example:
+            >>> # 初始化下载器
+            >>> downloader = MtFileDownloader(configs, workers=8, verbose=True)
+            >>> 
+            >>> # 使用4个下载器实例并行下载
+            >>> success_count = downloader.parallel_download_by_instances(
+            ...     server_name="169",
+            ...     file_path_list=remote_path_list,
+            ...     local_path_list=local_path_list,
+            ...     callback=lambda current, total, name: print(f"{current}/{total}: {name}"),
+            ...     batch_size=150,
+            ...     num_instances=4,
+            ...     workers_per_instance=2
+            ... )
+            >>> print(f"成功下载: {success_count} 个文件")
+        """
+        if num_instances <= 0:
+            raise ValueError("num_instances必须大于0")
+        if workers_per_instance <= 0:
+            raise ValueError("workers_per_instance必须大于0")
+        if batch_size <= 0:
+            raise ValueError("batch_size必须大于0")
+        if server_name not in self._configs:
+            raise ValueError(f"服务器配置 '{server_name}' 不存在，可用配置: {list(self._configs.keys())}")
+        
+        # 获取服务器类型
+        server_config = self._configs[server_name]
+        server_type = server_config.get('type', 'ftp').lower()
+        
+        # 获取文件列表
+        if file_path_list is not None:
+            file_list = file_path_list
+        elif remote_dir is not None:
+            if server_type == 'sftp':
+                with SFTPClient(self._configs) as client:
+                    file_list = client.get_dir_file_list(server_name, remote_dir)
+            else:
+                with FTPClient(self._configs) as client:
+                    file_list = client.get_dir_file_list(server_name, remote_dir)
+        else:
+            raise ValueError("必须提供remote_dir或file_path_list参数")
+        
+        if not file_list:
+            self.logger.warning("无文件可下载")
+            return 0
+        
+        if shuffle:
+            random.seed(42)
+            random.shuffle(file_list)
+        
+        # 限制下载数量
+        if max_download_num is not None:
+            file_list = file_list[:max_download_num]
+        total_files = len(file_list)
+        
+        # 处理local_path_list
+        if isinstance(local_path_list, list):
+            if len(local_path_list) != len(file_list):
+                raise ValueError("local_path_list长度必须与file_list相同")
+        
+        # 分割文件列表
+        self.logger.info(f"启动 {num_instances} 个下载器实例并行下载")
+        self.logger.info(f"每个实例线程数: {workers_per_instance}")
+        self.logger.info(f"总线程数: {num_instances * workers_per_instance}")
+        
+        chunk_size = len(file_list) // num_instances
+        file_chunks = []
+        local_path_chunks = []
+        
+        for i in range(num_instances):
+            start_idx = i * chunk_size
+            end_idx = (i + 1) * chunk_size if i < num_instances - 1 else len(file_list)
+            file_chunks.append(file_list[start_idx:end_idx])
+            
+            if isinstance(local_path_list, list):
+                local_path_chunks.append(local_path_list[start_idx:end_idx])
+            else:
+                local_path_chunks.append(local_path_list)
+            
+            self.logger.info(f"实例 {i}: 负责 {len(file_chunks[-1])} 个文件")
+        
+        # 定义下载器实例的工作函数
+        def instance_worker(instance_id, file_chunk, local_path_chunk):
+            """
+            单个下载器实例的工作函数
+            """
+            self.logger.info(f"下载器实例 {instance_id} 开始处理")
+            
+            # 创建新的下载器实例
+            instance_downloader = MtFileDownloader(
+                configs=self._configs,
+                workers=workers_per_instance,
+                verbose=self.logger.isEnabledFor(logging.DEBUG)
+            )
+            
+            # 检查文件存在性
+            existing_files, existing_local_paths = instance_downloader.check_files_existence(
+                server_name=server_name,
+                local_path_list=local_path_chunk,
+                file_path_list=file_chunk,
+            )
+            
+            self.logger.info(f"下载器实例 {instance_id}: 存在的文件数量: {len(existing_files)}")
+            
+            # 下载文件
+            success_count = instance_downloader.download_files_by_pathlist(
+                server_name=server_name,
+                file_path_list=existing_files,
+                local_path_list=existing_local_paths,
+                callback=callback,
+                batch_size=batch_size
+            )
+            
+            self.logger.info(f"下载器实例 {instance_id} 完成: 成功下载 {success_count}/{len(existing_files)} 个文件")
+            return success_count
+        
+        # 使用线程池运行多个下载器实例
+        self.logger.info("开始并行下载...")
+        all_success_count = 0
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=num_instances) as executor:
+            # 提交任务
+            futures = []
+            for i in range(num_instances):
+                future = executor.submit(
+                    instance_worker,
+                    i,
+                    file_chunks[i],
+                    local_path_chunks[i]
+                )
+                futures.append(future)
+            
+            # 收集结果
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    success_count = future.result()
+                    all_success_count += success_count
+                except Exception as e:
+                    self.logger.error(f"下载器实例执行失败: {e}")
+        
+        # 打印总结果
+        self.logger.info(f"\n=== 并行下载完成 ===")
+        self.logger.info(f"总成功下载数量: {all_success_count}")
+        self.logger.info(f"总文件数量: {len(file_list)}")
+        
+        return all_success_count
+
+    @staticmethod
+    def download_files_chunk(downloader_id, file_chunk, local_path_chunk, configs, server_name, workers=2, verbose=True):
+        """
+        下载文件块
+        
+        Args:
+            downloader_id: 下载器ID
+            file_chunk: 要下载的文件路径列表
+            local_path_chunk: 对应的本地保存路径列表
+            configs: 服务器配置字典
+            server_name: 服务器配置名称
+            workers: 每个下载器的线程数，默认为2
+            verbose: 是否启用详细日志，默认为True
+        
+        Returns:
+            int: 成功下载的文件数量
+        """
+        print(f"下载器 {downloader_id} 开始处理 {len(file_chunk)} 个文件")
+        success_count = 0
+        
+        try:
+            # 创建下载器实例
+            downloader = MtFileDownloader(
+                configs=configs, 
+                workers=workers, 
+                verbose=verbose
+            )
+            
+            # 检查文件存在性
+            print(f"下载器 {downloader_id}: 开始检查文件存在性...")
+            existing_files, existing_local_paths = downloader.check_files_existence(
+                server_name=server_name,
+                local_path_list=local_path_chunk,
+                file_path_list=file_chunk,
+            )
+            
+            print(f"下载器 {downloader_id}: 存在的文件数量: {len(existing_files)}")
+            
+            if not existing_files:
+                print(f"下载器 {downloader_id}: 没有可下载的文件")
+                return 0
+            
+            # 下载文件
+            print(f"下载器 {downloader_id}: 开始下载文件...")
+            success_count = downloader.download_files_by_pathlist(
+                server_name=server_name,
+                file_path_list=existing_files,
+                local_path_list=existing_local_paths,
+                callback=lambda current, total, name: print(f"下载器 {downloader_id}: {current}/{total}: {name}"),
+                batch_size=150
+            )
+            
+            print(f"下载器 {downloader_id} 完成: 成功下载 {success_count}/{len(existing_files)} 个文件")
+            # 手动验证下载结果
+            import os
+            actual_success = 0
+            for local_path in existing_local_paths:
+                if os.path.exists(local_path) and os.path.getsize(local_path) > 0:
+                    actual_success += 1
+            print(f"下载器 {downloader_id}: 实际成功下载 {actual_success}/{len(existing_local_paths)} 个文件")
+            success_count = actual_success
+        except Exception as e:
+            print(f"下载器 {downloader_id} 执行失败: {str(e)}")
+            import traceback
+            traceback.print_exc()
+        
+        return success_count
+
+
+

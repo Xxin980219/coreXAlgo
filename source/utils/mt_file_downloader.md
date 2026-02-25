@@ -20,6 +20,8 @@
 - **连接预热**：在开始检查前预热连接，确保连接稳定性
 - **服务器友好**：智能的请求间隔，避免服务器限流
 - **详细的日志输出**：支持详细的连接状态和错误处理日志
+- **多实例并行下载**：支持创建多个下载器实例并行处理文件下载
+- **单线程模式支持**：根据用户需求，支持单线程下载模式
 
 ## 使用示例
 
@@ -52,9 +54,9 @@ def progress_callback(percent):
     print(f"下载进度: {percent}%")
 
 success_count = downloader.download_files_by_pathlist(
-    ftp_name="my_ftp",  # 可以使用FTP或SFTP配置
+    server_name="my_ftp",  # 可以使用FTP或SFTP配置
     local_path_list="/local/download/path",
-    ftp_dir="/remote/files",
+    remote_dir="/remote/files",
     max_download_num=50,
     shuffle=True,
     callback=progress_callback
@@ -71,9 +73,9 @@ file_list = ["/remote/file1.txt", "/remote/file2.jpg", "/remote/file3.pdf"]
 local_paths = ["/local/file1.txt", "/local/file2.jpg", "/local/file3.pdf"]
 
 success_count = downloader.download_files_by_pathlist(
-    ftp_name="my_sftp",  # 使用SFTP配置
+    server_name="my_sftp",  # 使用SFTP配置
     local_path_list=local_paths,
-    img_path_list=file_list,
+    file_path_list=file_list,
     max_download_num=10
 )
 
@@ -88,9 +90,9 @@ downloader = MtFileDownloader(file_config, workers=8, verbose=True)
 
 # 下载文件
 success_count = downloader.download_files_by_pathlist(
-    ftp_name="my_ftp",
+    server_name="my_ftp",
     local_path_list="/local/download/path",
-    ftp_dir="/remote/large_files",
+    remote_dir="/remote/large_files",
     max_download_num=200
 )
 
@@ -103,9 +105,9 @@ print(f"成功下载: {success_count} 个文件")
 # 自定义每批处理文件数量，提高下载稳定性
 # 适用于网络不稳定或服务器连接限制较严格的情况
 success_count = downloader.download_files_by_pathlist(
-    ftp_name="my_ftp",
+    server_name="my_ftp",
     local_path_list="/local/download/path",
-    ftp_dir="/remote/large_files",
+    remote_dir="/remote/large_files",
     max_download_num=200,
     batch_size=10  # 每批处理10个文件
 )
@@ -114,9 +116,9 @@ print(f"成功下载: {success_count} 个文件")
 
 # 对于SFTP服务器，也可以使用相同的方式设置batch_size
 success_count = downloader.download_files_by_pathlist(
-    ftp_name="my_sftp",
+    server_name="my_sftp",
     local_path_list="/local/sftp_downloads",
-    ftp_dir="/remote/sftp_files",
+    remote_dir="/remote/sftp_files",
     max_download_num=100,
     batch_size=5  # 每批处理5个文件
 )
@@ -129,9 +131,9 @@ print(f"成功下载: {success_count} 个文件")
 ```python
 # 使用SFTP协议下载文件
 success_count = downloader.download_files_by_pathlist(
-    ftp_name="my_sftp",  # 使用SFTP配置
+    server_name="my_sftp",  # 使用SFTP配置
     local_path_list="/local/sftp_downloads",
-    ftp_dir="/remote/sftp_files",
+    remote_dir="/remote/sftp_files",
     max_download_num=100
 )
 
@@ -161,9 +163,9 @@ print(f"文件检查完成: 存在 {len(existing_files)} 个文件，不存在 {
 # 使用存在的文件列表进行下载
 if existing_files:
     success_count = downloader.download_files_by_pathlist(
-        ftp_name="my_ftp",
+        server_name="my_ftp",
         local_path_list=existing_local_paths,
-        img_path_list=existing_files
+        file_path_list=existing_files
     )
     print(f"成功下载: {success_count} 个文件")
 ```
@@ -197,9 +199,9 @@ downloader = MtFileDownloader(file_config, workers=10, verbose=True)
 
 # 调整连接管理参数
 success_count = downloader.download_files_by_pathlist(
-    ftp_name="my_ftp",
+    server_name="my_ftp",
     local_path_list="/local/downloads",
-    ftp_dir="/remote/files",
+    remote_dir="/remote/files",
     batch_size=50,  # 每批处理50个文件
     max_download_num=1000
 )
@@ -221,9 +223,9 @@ existing_files, existing_local_paths = downloader.check_files_existence(
 
 # 下载所有文件
 success_count = downloader.download_files_by_pathlist(
-    ftp_name="my_ftp",
+    server_name="my_ftp",
     local_path_list=existing_local_paths,
-    img_path_list=existing_files
+    file_path_list=existing_files
     # 未指定 max_download_num，默认下载所有
 )
 ```
@@ -237,14 +239,55 @@ downloader = MtFileDownloader(file_config, workers=10, verbose=True)
 # 下载文件，自动处理连接错误
 try:
     success_count = downloader.download_files_by_pathlist(
-        ftp_name="my_ftp",
+        server_name="my_ftp",
         local_path_list="/local/downloads",
-        ftp_dir="/remote/large_files",
+        remote_dir="/remote/large_files",
         max_download_num=500
     )
     print(f"成功下载: {success_count} 个文件")
 except Exception as e:
     print(f"下载过程中发生错误: {str(e)}")
+```
+
+### 多实例并行下载
+
+```python
+# 使用多个下载器实例并行下载文件
+downloader = MtFileDownloader(file_config, workers=8, verbose=True)
+
+# 准备文件列表
+file_list = [f"/remote/file{i}.txt" for i in range(1000)]
+local_paths = [f"/local/file{i}.txt" for i in range(1000)]
+
+# 使用4个下载器实例并行下载
+success_count = downloader.parallel_download_by_instances(
+    server_name="my_sftp",
+    local_path_list=local_paths,
+    file_path_list=file_list,
+    callback=lambda current, total, name: print(f"{current}/{total}: {name}"),
+    batch_size=150,
+    num_instances=4,  # 创建4个下载器实例
+    workers_per_instance=2  # 每个实例使用2个线程
+)
+
+print(f"成功下载: {success_count} 个文件")
+```
+
+### 单线程下载模式
+
+```python
+# 创建单线程下载器实例
+downloader = MtFileDownloader(file_config, workers=1, verbose=True)
+
+# 下载文件（单线程模式）
+success_count = downloader.download_files_by_pathlist(
+    server_name="my_ftp",
+    local_path_list="/local/downloads",
+    remote_dir="/remote/files",
+    max_download_num=100
+)
+
+print(f"成功下载: {success_count} 个文件")
 ```
 
 ## 技术特性
