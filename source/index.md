@@ -7,7 +7,7 @@
     <p class="hero-subtitle">算法开发工具库</p>
     <p class="hero-description">为算法工程师打造的综合性工具集合，提供高效、可靠的技术支持，显著提升开发效率</p>
     <div class="hero-buttons">
-      <a href="file_processing/index" class="btn btn-primary">开始使用</a>
+      <a href="#quick-start" class="btn btn-primary">开始使用</a>
       <a href="https://github.com/Xxin980219/coreXAlgo" class="btn btn-secondary" target="_blank">GitHub</a>
     </div>
   </div>
@@ -169,6 +169,46 @@
     line-height: 1.5;
   }
   
+  /* Sub Features Grid */
+  .sub-features-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+  }
+  
+  .sub-feature-card {
+    background: white;
+    border-radius: 8px;
+    padding: 1rem;
+    border: 1px solid #e2e8f0;
+    transition: all 0.3s ease;
+  }
+  
+  .sub-feature-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.08);
+    border-color: #667eea;
+  }
+  
+  .sub-feature-card h4 {
+    color: #1e293b;
+    font-size: 1rem;
+    margin-bottom: 0.75rem;
+    font-weight: 600;
+  }
+  
+  .sub-feature-card ul {
+    margin: 0;
+    padding-left: 1.2rem;
+    color: #64748b;
+  }
+  
+  .sub-feature-card li {
+    margin-bottom: 0.4rem;
+    line-height: 1.5;
+    font-size: 0.9rem;
+  }
+  
   /* Module Cards */
   .module-card {
     border-radius: 12px;
@@ -179,6 +219,13 @@
     text-align: center;
     position: relative;
     overflow: hidden;
+  }
+  
+  .module-link {
+    text-decoration: none;
+    color: inherit;
+    display: block;
+    height: 100%;
   }
   
   .module-card::before {
@@ -287,7 +334,7 @@
   /* Features Grid */
   .features-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    grid-template-columns: 1fr;
     gap: 1.5rem;
     margin: 2rem 0;
   }
@@ -346,66 +393,97 @@
 
 ## 📋 项目概览
 
-:::{grid} 1 1 2 3
+<div class="features-grid">
+  <div class="feature-card">
+    <h3>🎯 核心功能</h3>
+    <div class="sub-features-grid">
+      <div class="sub-feature-card">
+        <h4>计算机视觉</h4>
+        <ul>
+          <li>图像处理与变换</li>
+          <li>标注工具与格式转换</li>
+          <li>目标检测与可视化</li>
+        </ul>
+      </div>
+      <div class="sub-feature-card">
+        <h4>文件处理</h4>
+        <ul>
+          <li>批量文件操作</li>
+          <li>格式转换与管理</li>
+          <li>数据预处理管道</li>
+        </ul>
+      </div>
+      <div class="sub-feature-card">
+        <h4>基础工具</h4>
+        <ul>
+          <li>日志管理与配置</li>
+          <li>网络传输协议</li>
+          <li>数据库客户端</li>
+        </ul>
+      </div>
+    </div>
+  </div>
 
-:::{grid-item-card} 🎯 核心功能
-:class-card: feature-card
+  <div class="feature-card">
+    <h3>🚀 技术特点</h3>
+    <div class="sub-features-grid">
+      <div class="sub-feature-card">
+        <h4>架构设计</h4>
+        <ul>
+          <li>模块化代码结构</li>
+          <li>易于扩展和维护</li>
+          <li>清晰的API设计</li>
+        </ul>
+      </div>
+      <div class="sub-feature-card">
+        <h4>性能优化</h4>
+        <ul>
+          <li>多线程并发支持</li>
+          <li>批量处理能力</li>
+          <li>内存效率优化</li>
+        </ul>
+      </div>
+      <div class="sub-feature-card">
+        <h4>质量保证</h4>
+        <ul>
+          <li>完善的异常处理</li>
+          <li>详细的文档说明</li>
+          <li>跨平台兼容性</li>
+        </ul>
+      </div>
+    </div>
+  </div>
 
-**计算机视觉**
-- 图像处理与变换
-- 标注工具与格式转换
-- 目标检测与可视化
-
-**文件处理**
-- 批量文件操作
-- 格式转换与管理
-- 数据预处理管道
-
-**基础工具**
-- 日志管理与配置
-- 网络传输协议
-- 数据库客户端
-:::
-
-:::{grid-item-card} 🚀 技术特点
-:class-card: feature-card
-
-**架构设计**
-- 模块化代码结构
-- 易于扩展和维护
-- 清晰的API设计
-
-**性能优化**
-- 多线程并发支持
-- 批量处理能力
-- 内存效率优化
-
-**质量保证**
-- 完善的异常处理
-- 详细的文档说明
-- 跨平台兼容性
-:::
-
-:::{grid-item-card} 💡 应用场景
-:class-card: feature-card
-
-**目标检测**
-- 数据集准备与标注
-- 格式转换与验证
-- 结果可视化分析
-
-**图像分割**
-- 多边形处理
-- 掩码操作
-- 数据增强
-
-**工业应用**
-- 缺陷检测流程
-- 图像裁剪分类
-- 统计分析报告
-:::
-
-::::
+  <div class="feature-card">
+    <h3>💡 应用场景</h3>
+    <div class="sub-features-grid">
+      <div class="sub-feature-card">
+        <h4>目标检测</h4>
+        <ul>
+          <li>数据集准备与标注</li>
+          <li>格式转换与验证</li>
+          <li>结果可视化分析</li>
+        </ul>
+      </div>
+      <div class="sub-feature-card">
+        <h4>图像分割</h4>
+        <ul>
+          <li>多边形处理</li>
+          <li>掩码操作</li>
+          <li>数据增强</li>
+        </ul>
+      </div>
+      <div class="sub-feature-card">
+        <h4>工业应用</h4>
+        <ul>
+          <li>缺陷检测流程</li>
+          <li>图像裁剪分类</li>
+          <li>统计分析报告</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
 
 ## 📁 项目架构
 
@@ -472,47 +550,36 @@ coreXAlgo/
 
 ## 📚 模块文档
 
-::::{grid} 1 1 2 3
+<div class="features-grid">
+  <div class="module-card">
+    <a href="adv_cv/index.html" class="module-link">
+      <span class="module-icon">🖼️</span>
+      <h3>计算机视觉</h3>
+      <p>Adv_cv Module</p>
+      <p>常用的计算机视觉技术和处理方法，以及对 OpenCV 函数的改进版本</p>
+    </a>
+  </div>
 
-:::{grid-item-card} {octicon}`rocket`&nbsp; Adv_cv Module
-:link: adv_cv/index
-:link-type: doc
-:class-card: module-card
+  <div class="module-card">
+    <a href="file_processing/index.html" class="module-link">
+      <span class="module-icon">📂</span>
+      <h3>文件处理</h3>
+      <p>File_processing Module</p>
+      <p>常用的文件处理功能函数，特别是针对标注数据和图像处理的自定义工具</p>
+    </a>
+  </div>
 
-<span class="module-icon">🖼️</span>
+  <div class="module-card">
+    <a href="utils/index.html" class="module-link">
+      <span class="module-icon">🛠️</span>
+      <h3>基础工具</h3>
+      <p>Utils Module</p>
+      <p>常用的基础工具函数和类，包括网络传输、数据库操作、日志管理等</p>
+    </a>
+  </div>
+</div>
 
-**计算机视觉**
-
-常用的计算机视觉技术和处理方法，以及对 OpenCV 函数的改进版本
-:::
-
-:::{grid-item-card} {octicon}`file-directory`&nbsp; File_processing Module
-:link: file_processing/index
-:link-type: doc
-:class-card: module-card
-
-<span class="module-icon">📂</span>
-
-**文件处理**
-
-常用的文件处理功能函数，特别是针对标注数据和图像处理的自定义工具
-:::
-
-:::{grid-item-card} {octicon}`tools`&nbsp; Utils Module
-:link: utils/index
-:link-type: doc
-:class-card: module-card
-
-<span class="module-icon">🛠️</span>
-
-**基础工具**
-
-常用的基础工具函数和类，包括网络传输、数据库操作、日志管理等
-:::
-
-::::
-
-## 🔧 快速开始
+## 🔧 快速开始 {#quick-start}
 
 <div class="quick-start-section">
 
