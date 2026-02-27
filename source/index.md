@@ -1,91 +1,342 @@
-# coreXAlgo Documentation  
+# coreXAlgo Documentation
 
 <div class="hero-section">
   <div class="hero-content">
-    <h1>coreXAlgo</h1>
-    <p class="subtitle">算法开发工具库</p>
-    <p class="description">一个为算法工程师打造的综合性工具集合，提供高效、可靠的技术支持</p>
-    <div class="version-badge">
-      <span class="badge">v0.5.0</span>
+    <div class="hero-badge">🚀 v0.5.0</div>
+    <h1 class="hero-title">coreXAlgo</h1>
+    <p class="hero-subtitle">算法开发工具库</p>
+    <p class="hero-description">为算法工程师打造的综合性工具集合，提供高效、可靠的技术支持，显著提升开发效率</p>
+    <div class="hero-buttons">
+      <a href="file_processing/index" class="btn btn-primary">开始使用</a>
+      <a href="https://github.com/Xxin980219/coreXAlgo" class="btn btn-secondary" target="_blank">GitHub</a>
     </div>
   </div>
+  <div class="hero-pattern"></div>
 </div>
 
 <style>
+  /* Hero Section */
   .hero-section {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    padding: 2rem;
-    border-radius: 12px;
-    margin-bottom: 2rem;
+    position: relative;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+    padding: 4rem 2rem;
+    border-radius: 16px;
+    margin-bottom: 3rem;
     color: white;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(102, 126, 234, 0.3);
+  }
+  
+  .hero-pattern {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-image: 
+      radial-gradient(circle at 20% 50%, rgba(255,255,255,0.1) 0%, transparent 50%),
+      radial-gradient(circle at 80% 80%, rgba(255,255,255,0.1) 0%, transparent 50%),
+      radial-gradient(circle at 40% 20%, rgba(255,255,255,0.05) 0%, transparent 30%);
+    pointer-events: none;
   }
   
   .hero-content {
+    position: relative;
+    z-index: 1;
     max-width: 800px;
     margin: 0 auto;
     text-align: center;
   }
   
-  .hero-content h1 {
-    font-size: 2.5rem;
-    margin-bottom: 0.5rem;
-    font-weight: bold;
-  }
-  
-  .subtitle {
-    font-size: 1.2rem;
-    margin-bottom: 1rem;
-    opacity: 0.9;
-  }
-  
-  .description {
-    font-size: 1rem;
-    margin-bottom: 1.5rem;
-    opacity: 0.8;
-  }
-  
-  .version-badge {
+  .hero-badge {
     display: inline-block;
     background: rgba(255, 255, 255, 0.2);
-    padding: 0.3rem 0.8rem;
+    backdrop-filter: blur(10px);
+    padding: 0.4rem 1rem;
     border-radius: 20px;
-    font-size: 0.9rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-bottom: 1.5rem;
+    border: 1px solid rgba(255, 255, 255, 0.3);
   }
   
-  .feature-card {
+  .hero-title {
+    font-size: 3.5rem;
+    margin-bottom: 0.5rem;
+    font-weight: 800;
+    background: linear-gradient(to right, #ffffff, #e0e7ff);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  }
+  
+  .hero-subtitle {
+    font-size: 1.5rem;
+    margin-bottom: 1rem;
+    opacity: 0.95;
+    font-weight: 500;
+  }
+  
+  .hero-description {
+    font-size: 1.1rem;
+    margin-bottom: 2rem;
+    opacity: 0.85;
+    line-height: 1.6;
+    max-width: 600px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  
+  .hero-buttons {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.8rem 2rem;
     border-radius: 8px;
-    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.3s ease;
+    font-size: 1rem;
+  }
+  
+  .btn-primary {
+    background: white;
+    color: #667eea;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+  }
+  
+  .btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+  }
+  
+  .btn-secondary {
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    backdrop-filter: blur(10px);
+  }
+  
+  .btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: translateY(-2px);
+  }
+  
+  /* Feature Cards */
+  .feature-card {
+    border-radius: 12px;
+    padding: 1.5rem;
+    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+    border: 1px solid #e2e8f0;
+    transition: all 0.3s ease;
+    height: 100%;
   }
   
   .feature-card:hover {
     transform: translateY(-5px);
-    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.1);
+    border-color: #667eea;
   }
   
   .feature-icon {
-    font-size: 2rem;
+    font-size: 2.5rem;
     margin-bottom: 1rem;
+    display: block;
   }
   
-  .grid-container {
-    gap: 1.5rem;
+  .feature-card h3 {
+    color: #1e293b;
+    font-size: 1.25rem;
+    margin-bottom: 0.75rem;
+    font-weight: 700;
   }
   
+  .feature-card ul {
+    margin: 0;
+    padding-left: 1.2rem;
+    color: #64748b;
+  }
+  
+  .feature-card li {
+    margin-bottom: 0.4rem;
+    line-height: 1.5;
+  }
+  
+  /* Module Cards */
+  .module-card {
+    border-radius: 12px;
+    padding: 2rem;
+    background: white;
+    border: 2px solid #e2e8f0;
+    transition: all 0.3s ease;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .module-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, #667eea, #764ba2);
+    transform: scaleX(0);
+    transition: transform 0.3s ease;
+  }
+  
+  .module-card:hover::before {
+    transform: scaleX(1);
+  }
+  
+  .module-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 15px 50px rgba(102, 126, 234, 0.15);
+    border-color: #667eea;
+  }
+  
+  .module-icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+    display: block;
+  }
+  
+  .module-card h3 {
+    color: #1e293b;
+    font-size: 1.3rem;
+    margin-bottom: 0.75rem;
+    font-weight: 700;
+  }
+  
+  .module-card p {
+    color: #64748b;
+    margin: 0;
+    line-height: 1.6;
+  }
+  
+  /* Info Section */
   .info-section {
-    background: #f8f9fa;
-    padding: 1.5rem;
-    border-radius: 8px;
-    margin-bottom: 2rem;
+    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+    padding: 2rem;
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
   }
   
   .info-item {
-    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    margin-bottom: 1rem;
+    padding: 0.75rem;
+    background: white;
+    border-radius: 8px;
+    border-left: 4px solid #667eea;
+  }
+  
+  .info-item:last-child {
+    margin-bottom: 0;
   }
   
   .info-label {
-    font-weight: 600;
-    margin-right: 0.5rem;
+    font-weight: 700;
+    color: #1e293b;
+    margin-right: 0.75rem;
+    min-width: 120px;
+  }
+  
+  .info-value {
+    color: #64748b;
+    font-weight: 500;
+  }
+  
+  /* Quick Start Section */
+  .quick-start-section {
+    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+    padding: 2.5rem;
+    border-radius: 12px;
+    color: white;
+    margin: 2rem 0;
+  }
+  
+  .quick-start-section h3 {
+    color: white;
+    margin-top: 0;
+    margin-bottom: 1.5rem;
+    font-size: 1.5rem;
+  }
+  
+  .quick-start-section pre {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 1rem;
+    overflow-x: auto;
+  }
+  
+  .quick-start-section code {
+    color: #a5b4fc;
+    font-family: 'Consolas', 'Monaco', monospace;
+  }
+  
+  /* Features Grid */
+  .features-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1.5rem;
+    margin: 2rem 0;
+  }
+  
+  .feature-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1rem;
+    background: #f8fafc;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+  }
+  
+  .feature-check {
+    color: #10b981;
+    font-size: 1.2rem;
+    flex-shrink: 0;
+  }
+  
+  .feature-text {
+    color: #334155;
+    font-weight: 500;
+  }
+  
+  /* Changelog */
+  .changelog-item {
+    padding: 1.5rem;
+    background: #f8fafc;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+    border-left: 4px solid #667eea;
+  }
+  
+  .changelog-version {
+    font-weight: 700;
+    color: #1e293b;
+    font-size: 1.1rem;
+    margin-bottom: 0.5rem;
+  }
+  
+  .changelog-list {
+    margin: 0;
+    padding-left: 1.2rem;
+    color: #64748b;
+  }
+  
+  .changelog-list li {
+    margin-bottom: 0.3rem;
   }
 </style>
 
@@ -95,65 +346,97 @@
 
 ## 📋 项目概览
 
-:::{grid}
+:::{grid} 1 1 2 3
 
 :::{grid-item-card} 🎯 核心功能
 :class-card: feature-card
 
-- **计算机视觉**：图像处理、标注工具、目标检测
-- **文件处理**：批量操作、格式转换、数据管理
-- **基础工具**：日志管理、网络传输、数据库操作
-- **数据可视化**：目标检测结果展示、标注可视化
+**计算机视觉**
+- 图像处理与变换
+- 标注工具与格式转换
+- 目标检测与可视化
+
+**文件处理**
+- 批量文件操作
+- 格式转换与管理
+- 数据预处理管道
+
+**基础工具**
+- 日志管理与配置
+- 网络传输协议
+- 数据库客户端
 :::
 
 :::{grid-item-card} 🚀 技术特点
 :class-card: feature-card
 
-- **模块化设计**：清晰的代码结构，易于扩展
-- **性能优化**：多线程支持，批量处理
-- **错误处理**：完善的异常捕获机制
-- **文档完善**：详细的使用示例和API文档
-- **跨平台兼容**：支持Windows、Linux、macOS
+**架构设计**
+- 模块化代码结构
+- 易于扩展和维护
+- 清晰的API设计
+
+**性能优化**
+- 多线程并发支持
+- 批量处理能力
+- 内存效率优化
+
+**质量保证**
+- 完善的异常处理
+- 详细的文档说明
+- 跨平台兼容性
 :::
 
 :::{grid-item-card} 💡 应用场景
 :class-card: feature-card
 
-- **目标检测**：数据集准备、标注转换、结果可视化
-- **图像分割**：多边形处理、掩码操作、数据增强
-- **工业缺陷检测**：图像裁剪、缺陷分类、统计分析
-- **数据管道**：文件管理、批量处理、网络传输
+**目标检测**
+- 数据集准备与标注
+- 格式转换与验证
+- 结果可视化分析
+
+**图像分割**
+- 多边形处理
+- 掩码操作
+- 数据增强
+
+**工业应用**
+- 缺陷检测流程
+- 图像裁剪分类
+- 统计分析报告
 :::
 
 ::::
 
 ## 📁 项目架构
 
-:::{dropdown} {octicon}`checklist;1em`&nbsp; 目录结构
+:::{dropdown} {octicon}`repo;1em`&nbsp; 目录结构
 :animate: fade-in-slide-down
 :open:
 
 ```
 coreXAlgo/
-├── __init__.py              # 主入口文件
-├── version.py               # 版本管理
-├── utils/                   # 基础工具模块
-│   ├── basic.py            # 基础工具函数
-│   ├── bbox_util.py        # 边界框处理工具
-│   ├── constants.py        # 常量定义
-│   ├── ftp_client.py       # FTP客户端
-│   ├── sftp_client.py      # SFTP客户端
-│   ├── mt_db_client.py     # 多线程数据库客户端
-│   └── mt_file_downloader.py # 多线程文件下载器
-├── adv_cv/                 # 高级计算机视觉模块
-│   └── basic.py           # 图像处理功能
-└── file_processing/         # 文件处理模块
-    ├── basic.py           # 文件操作工具
-    ├── archive.py         # 压缩解压管理
-    ├── annotation_convert.py # 标注格式转换
-    ├── data_preprocessing.py # 数据预处理
-    ├── image_crop.py      # 图像裁剪处理
-    └── voc_xml_deal.py   # VOC XML处理
+├── 📄 __init__.py              # 主入口文件
+├── 📄 version.py               # 版本管理
+│
+├── 📁 utils/                   # 基础工具模块
+│   ├── 📄 basic.py            # 基础工具函数
+│   ├── 📄 bbox_util.py        # 边界框处理工具
+│   ├── 📄 constants.py        # 常量定义
+│   ├── 📄 ftp_client.py       # FTP客户端
+│   ├── 📄 sftp_client.py      # SFTP客户端
+│   ├── 📄 mt_db_client.py     # 多线程数据库客户端
+│   └── 📄 mt_file_downloader.py # 多线程文件下载器
+│
+├── 📁 adv_cv/                 # 高级计算机视觉模块
+│   └── 📄 basic.py           # 图像处理功能
+│
+└── 📁 file_processing/         # 文件处理模块
+    ├── 📄 basic.py           # 文件操作工具
+    ├── 📄 archive.py         # 压缩解压管理
+    ├── 📄 annotation_convert.py # 标注格式转换
+    ├── 📄 data_preprocessing.py # 数据预处理
+    ├── 📄 image_crop.py      # 图像裁剪处理
+    └── 📄 voc_xml_deal.py   # VOC XML处理
 ```
 :::
 
@@ -165,47 +448,64 @@ coreXAlgo/
 
 <div class="info-section">
   <div class="info-item">
-    <span class="info-label">当前版本:</span> 0.5.0
+    <span class="info-label">📦 当前版本</span>
+    <span class="info-value">0.5.0</span>
   </div>
   <div class="info-item">
-    <span class="info-label">Python 兼容性:</span> ≥ 3.8
+    <span class="info-label">🐍 Python 兼容</span>
+    <span class="info-value">≥ 3.8</span>
   </div>
   <div class="info-item">
-    <span class="info-label">更新日期:</span> 2026-02-27
+    <span class="info-label">📅 更新日期</span>
+    <span class="info-value">2026-02-27</span>
   </div>
   <div class="info-item">
-    <span class="info-label">作者:</span> Xxin_BOE
+    <span class="info-label">👤 作者</span>
+    <span class="info-value">Xxin_BOE</span>
   </div>
   <div class="info-item">
-    <span class="info-label">主要领域:</span> 计算机视觉、数据处理
+    <span class="info-label">🎯 主要领域</span>
+    <span class="info-value">计算机视觉、数据处理</span>
   </div>
 </div>
 :::
 
 ## 📚 模块文档
 
-::::{grid}
+::::{grid} 1 1 2 3
 
-:::{grid-item-card} {octicon}`rocket` Adv_cv Module
+:::{grid-item-card} {octicon}`rocket`&nbsp; Adv_cv Module
 :link: adv_cv/index
 :link-type: doc
-:class-card: feature-card
+:class-card: module-card
 
-常用的计算机视觉技术和处理方法,以及对OpenCV函数的改进版
+<span class="module-icon">🖼️</span>
+
+**计算机视觉**
+
+常用的计算机视觉技术和处理方法，以及对 OpenCV 函数的改进版本
 :::
 
-:::{grid-item-card} {octicon}`file` File_processing Module
+:::{grid-item-card} {octicon}`file-directory`&nbsp; File_processing Module
 :link: file_processing/index
 :link-type: doc
-:class-card: feature-card
+:class-card: module-card
 
-常用的文件处理功能函数，特别是针对标注数据和图像处理的自定义工具函数
+<span class="module-icon">📂</span>
+
+**文件处理**
+
+常用的文件处理功能函数，特别是针对标注数据和图像处理的自定义工具
 :::
 
-:::{grid-item-card} {octicon}`hubot` Utils Module
+:::{grid-item-card} {octicon}`tools`&nbsp; Utils Module
 :link: utils/index
 :link-type: doc
-:class-card: feature-card
+:class-card: module-card
+
+<span class="module-icon">🛠️</span>
+
+**基础工具**
 
 常用的基础工具函数和类，包括网络传输、数据库操作、日志管理等
 :::
@@ -214,11 +514,16 @@ coreXAlgo/
 
 ## 🔧 快速开始
 
+<div class="quick-start-section">
+
 ### 安装
 
 ```bash
 # 克隆仓库
-git clone https://github.com/yourusername/coreXAlgo.git
+git clone https://github.com/Xxin980219/coreXAlgo.git
+
+# 进入目录
+cd coreXAlgo
 
 # 安装依赖
 pip install -r requirements.txt
@@ -227,21 +532,21 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-### 基本使用
+### 基本使用示例
 
 ```python
 from coreXAlgo.utils import set_all_seed, colorstr
 from coreXAlgo.file_processing import get_files, clean_unmatched_files
 
-# 设置随机种子
+# 设置随机种子确保可复现
 set_all_seed(42)
 
 # 输出彩色日志
-print(colorstr('green', 'bold', '核心功能初始化完成'))
+print(colorstr('green', 'bold', '✅ 核心功能初始化完成'))
 
 # 查找文件
 image_files = get_files('./images', ['.jpg', '.png'])
-print(f"找到 {len(image_files)} 个图片文件")
+print(f"📸 找到 {len(image_files)} 个图片文件")
 
 # 清理不匹配的文件
 clean_unmatched_files(
@@ -251,47 +556,96 @@ clean_unmatched_files(
 )
 ```
 
+</div>
+
 ## 🎯 主要特性
 
-- **完善的文档**：详细的API文档和使用示例
-- **类型提示**：全面的类型注解，提高代码可读性
-- **错误处理**：完善的异常处理机制
-- **性能优化**：多线程支持，批量处理
-- **跨平台兼容**：支持Windows、Linux、macOS
-- **模块化设计**：清晰的代码结构，易于扩展
-- **生产级质量**：代码规范，测试覆盖完善
+<div class="features-grid">
+  <div class="feature-item">
+    <span class="feature-check">✅</span>
+    <span class="feature-text">完善的文档与详细的使用示例</span>
+  </div>
+  <div class="feature-item">
+    <span class="feature-check">✅</span>
+    <span class="feature-text">全面的类型注解提高代码可读性</span>
+  </div>
+  <div class="feature-item">
+    <span class="feature-check">✅</span>
+    <span class="feature-text">完善的异常处理机制</span>
+  </div>
+  <div class="feature-item">
+    <span class="feature-check">✅</span>
+    <span class="feature-text">多线程支持批量处理性能优化</span>
+  </div>
+  <div class="feature-item">
+    <span class="feature-check">✅</span>
+    <span class="feature-text">跨平台兼容 Windows/Linux/macOS</span>
+  </div>
+  <div class="feature-item">
+    <span class="feature-check">✅</span>
+    <span class="feature-text">模块化设计易于扩展维护</span>
+  </div>
+  <div class="feature-item">
+    <span class="feature-check">✅</span>
+    <span class="feature-text">生产级代码质量测试覆盖完善</span>
+  </div>
+  <div class="feature-item">
+    <span class="feature-check">✅</span>
+    <span class="feature-text">活跃的社区支持与持续更新</span>
+  </div>
+</div>
 
 ## 📝 版本更新日志
 
-### 版本 0.5.0
-- 为 `file_processing/basic.py` 中的函数添加了详细的文档字符串和使用示例
-- 优化了 `randomly_select_files` 函数的代码结构
-- 改进了 `clean_unmatched_files` 函数的文档
-- 更新了项目文档和分析报告
+<div class="changelog-item">
+  <div class="changelog-version">📌 版本 0.5.0 (2026-02-27)</div>
+  <ul class="changelog-list">
+    <li>为 file_processing/basic.py 中的函数添加了详细的文档字符串和使用示例</li>
+    <li>优化了 randomly_select_files 函数的代码结构</li>
+    <li>改进了 clean_unmatched_files 函数的文档</li>
+    <li>更新了项目文档和分析报告</li>
+  </ul>
+</div>
 
-### 版本 0.4.9
-- 修复了 `sftp_client.py` 中下载成功数量统计错误的问题
-- 优化了 `sftp_client.py` 的异常处理逻辑
-- 为 `mt_file_downloader.py` 添加了缺失的 `logging` 模块导入
-- 改进了 `sftp_client.py` 的连接池管理
+<div class="changelog-item">
+  <div class="changelog-version">📌 版本 0.4.9 (2026-02-26)</div>
+  <ul class="changelog-list">
+    <li>修复了 sftp_client.py 中下载成功数量统计错误的问题</li>
+    <li>优化了 sftp_client.py 的异常处理逻辑</li>
+    <li>为 mt_file_downloader.py 添加了缺失的 logging 模块导入</li>
+    <li>改进了 sftp_client.py 的连接池管理</li>
+  </ul>
+</div>
 
-### 版本 0.4.8
-- 重构了文件处理模块，提升了性能
-- 优化了工具模块，包括 bbox_util.py、ftp_client.py 和 sftp_client.py
-- 新增了 mt_file_downloader.py 模块
-- 改进了数据库客户端的查询性能和错误处理
+<div class="changelog-item">
+  <div class="changelog-version">📌 版本 0.4.8 (2026-02-25)</div>
+  <ul class="changelog-list">
+    <li>重构了文件处理模块，提升了性能</li>
+    <li>优化了工具模块，包括 bbox_util.py、ftp_client.py 和 sftp_client.py</li>
+    <li>新增了 mt_file_downloader.py 模块</li>
+    <li>改进了数据库客户端的查询性能和错误处理</li>
+  </ul>
+</div>
 
-### 版本 0.4.7
-- 修复了 SQLAlchemy 版本兼容性问题
-- 优化了 FTP/SFTP 客户端的错误处理
-- 改进了目标检测可视化的性能
+<div class="changelog-item">
+  <div class="changelog-version">📌 版本 0.4.7 (2026-02-24)</div>
+  <ul class="changelog-list">
+    <li>修复了 SQLAlchemy 版本兼容性问题</li>
+    <li>优化了 FTP/SFTP 客户端的错误处理</li>
+    <li>改进了目标检测可视化的性能</li>
+  </ul>
+</div>
 
-### 版本 0.4.6
-- 初始版本发布
-- 包含核心工具模块、高级计算机视觉模块和文件处理模块
+<div class="changelog-item">
+  <div class="changelog-version">📌 版本 0.4.6 (2026-02-23)</div>
+  <ul class="changelog-list">
+    <li>初始版本发布</li>
+    <li>包含核心工具模块、高级计算机视觉模块和文件处理模块</li>
+  </ul>
+</div>
 
 ```{toctree}
-:caption: Modules
+:caption: 模块文档
 :hidden:
 
 adv_cv/index
