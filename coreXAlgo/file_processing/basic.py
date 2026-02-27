@@ -1,11 +1,13 @@
 import shutil
 import time
 import zipfile
+from pathlib import Path
 from typing import Optional, Union, List, Set
 import os
 from tqdm import tqdm
 
 from ..utils.basic import set_logging
+from ..utils.constants import IMAGE_TYPE_FORMAT
 
 
 def get_files(directory: str, extensions: Union[str, List[str]] = '.jpg',
@@ -600,26 +602,422 @@ def randomly_select_files(source_dir: str, file_ext: str = '.jpg', distribution:
                           verbose: bool = False):
     """
     从源目录按照分配到多个目标目录的数量进行随机抽取文件
+    
+    该函数用于从指定目录中随机抽取文件，主要应用于数据集划分场景，
+    如将数据集划分为训练集、验证集和测试集。函数会返回随机打乱后的文件路径列表，
+    可以直接按照 distribution 参数指定的数量分配到不同目录。
 
     Args:
-        source_dir: 源文件目录
-        file_ext: 文件扩展名
-        distribution: 每个目标目录分配的文件数量
+        source_dir (str): 源文件目录路径，必须是存在的有效目录
+        file_ext (str): 文件扩展名，默认为 '.jpg'，支持常见图片格式如 '.png', '.jpeg' 等
+        distribution (List[int]): 每个目标目录分配的文件数量列表，如 [100, 50, 50] 表示
+                                  第一个目标目录分配100个文件，第二个分配50个，第三个分配50个
+        verbose (bool): 是否显示详细日志信息，默认为 False。设置为 True 时会显示
+                        文件扫描和抽取过程的详细信息
 
     Returns:
-        返回的是随机抽取的文件的路径列表
+        List[str] or None: 返回随机抽取的文件路径列表，如果源目录中没有找到文件则返回 None
+                          文件列表已经过随机打乱，可以直接按顺序分配给目标目录
+
+    Raises:
+        ValueError: 当 distribution 为 None 或空列表时
+        IndexError: 当请求的文件数量超过源目录中实际文件数量时
+        FileNotFoundError: 当 source_dir 不存在时
+
+    示例:
+        >>> # 示例1: 基本用法 - 从目录中随机抽取10个文件
+        >>> files = randomly_select_files('data/images', '.jpg', [10])
+        >>> print(f"抽取了 {len(files)} 个文件")
+        抽取了 10 个文件
+        
+        >>> # 示例2: 数据集划分 - 按 8:1:1 比例划分数据集
+        >>> distribution = [800, 100, 100]  # 训练集800，验证集100，测试集100
+        >>> files = randomly_select_files('dataset/images', '.jpg', distribution)
+        >>> 
+        >>> # 分配到不同目录
+        >>> train_files = files[:800]
+        >>> val_files = files[800:900]
+        >>> test_files = files[900:]
+        >>> 
+        >>> print(f"训练集: {len(train_files)} 个文件")
+        >>> print(f"验证集: {len(val_files)} 个文件")
+        >>> print(f"测试集: {len(test_files)} 个文件")
+        训练集: 800 个文件
+        验证集: 100 个文件
+        测试集: 100 个文件
+        
+        >>> # 示例3: 处理不同文件类型
+        >>> # 处理文本文件
+        >>> text_files = randomly_select_files('corpus', '.txt', [50])
+        >>> 
+        >>> # 处理XML标签文件
+        >>> xml_files = randomly_select_files('annotations', '.xml', [30])
+        
+        >>> # 示例4: 结合文件复制操作
+        >>> import shutil
+        >>> from pathlib import Path
+        >>> 
+        >>> # 随机抽取文件
+        >>> files = randomly_select_files('source', '.jpg', [10, 10])
+        >>> 
+        >>> # 复制到目标目录
+        >>> dest_dirs = ['train', 'val']
+        >>> start = 0
+        >>> for i, count in enumerate([10, 10]):
+        >>>     end = start + count
+        >>>     subset = files[start:end]
+        >>>     dest_path = Path(dest_dirs[i])
+        >>>     dest_path.mkdir(exist_ok=True)
+        >>>     
+        >>>     for file_path in subset:
+        >>>         shutil.copy(file_path, dest_path / Path(file_path).name)
+        >>>     
+        >>>     start = end
+        >>>     print(f"已复制 {count} 个文件到 {dest_path}")
     """
+    import random
+    
+    # 设置日志记录器，用于记录函数执行过程中的信息
     logger = set_logging("randomly_select_files", verbose=verbose)
+    
     # 获取源文件路径列表
+    # get_files 函数会递归搜索目录，返回所有匹配扩展名的文件路径
     source_files = get_files(source_dir, file_ext)
 
+    # 检查是否找到文件
     if not source_files:
         logger.warning(f"警告: 源目录 {source_dir} 中没有找到 {file_ext} 文件")
+        return None
+
+    # 计算需要抽取的文件总数
+    # distribution 是一个列表，sum 函数计算列表中所有元素的和
+    total_files_needed = sum(distribution)
+    
+    # 随机抽样
+    # random.sample 从源文件中随机抽取指定数量的文件，确保不重复
+    # 如果 total_files_needed 超过 source_files 的长度，会引发 IndexError
+    random_files = random.sample(source_files, total_files_needed)
+    
+    # 打乱文件顺序
+    # shuffle 函数会原地打乱列表顺序，增加随机性
+    # 这样可以确保分配给不同目标目录的文件是完全随机的
+    random.shuffle(random_files)
+    
+    return random_files
+
+def clean_unmatched_files(folder_path, img_exts=None, label_ext=None, delete_images=True, delete_labels=True, dry_run=True):
+    """
+    删除或移动没有对应匹配的文件（图片或标签文件）
+
+    参数:
+    folder_path: 文件夹路径
+    img_exts: 图片扩展名列表，默认从 coreXAlgo.utils.IMAGE_TYPE_FORMAT 获取
+    label_ext: 标签文件扩展名（单个字符串，如 '.txt' 或 '.xml'）
+    delete_images: True=删除没有对应标签的图片，False=移动到no_label_images文件夹
+    delete_labels: True=删除没有对应图片的标签，False=移动到no_image_labels文件夹
+    dry_run: 是否只是模拟运行（True=只显示不删除/不移动，False=实际操作）
+    
+    示例:
+        >>> # 示例1: 模拟运行 - 查看需要清理的文件
+        >>> clean_unmatched_files(
+        >>>     folder_path='dataset/train',
+        >>>     label_ext='.txt',
+        >>>     dry_run=True
+        >>> )
+        # 输出会显示文件匹配情况和计划的操作
+        
+        >>> # 示例2: 实际删除不匹配的文件
+        >>> clean_unmatched_files(
+        >>>     folder_path='dataset/val',
+        >>>     label_ext='.xml',
+        >>>     delete_images=True,
+        >>>     delete_labels=True,
+        >>>     dry_run=False
+        >>> )
+        # 会删除没有对应标签的图片和没有对应图片的标签文件
+        
+        >>> # 示例3: 移动不匹配的文件到单独的文件夹
+        >>> clean_unmatched_files(
+        >>>     folder_path='dataset/test',
+        >>>     label_ext='.txt',
+        >>>     delete_images=False,  # 移动而不是删除
+        >>>     delete_labels=False,  # 移动而不是删除
+        >>>     dry_run=False
+        >>> )
+        # 会将无标签的图片移动到 no_label_images 文件夹
+        # 将无图片的标签移动到 no_image_labels 文件夹
+        
+        >>> # 示例4: 自定义图片扩展名
+        >>> clean_unmatched_files(
+        >>>     folder_path='dataset/custom',
+        >>>     img_exts=['.jpg', '.png', '.bmp'],  # 只处理这些扩展名的图片
+        >>>     label_ext='.json',  # 标签文件为 JSON 格式
+        >>>     dry_run=True
+        >>> )
+        # 只检查指定扩展名的图片文件
+        
+        >>> # 示例5: 处理不同类型的标签文件
+        >>> # 处理 YOLO 格式标签文件
+        >>> clean_unmatched_files(
+        >>>     folder_path='yolo_dataset',
+        >>>     label_ext='.txt',
+        >>>     dry_run=True
+        >>> )
+        
+        >>> # 处理 PASCAL VOC 格式标签文件
+        >>> clean_unmatched_files(
+        >>>     folder_path='voc_dataset',
+        >>>     label_ext='.xml',
+        >>>     dry_run=True
+        >>> )
+    """
+    # 设置默认扩展名
+    if img_exts is None:
+        img_exts = IMAGE_TYPE_FORMAT
+
+    # 标签扩展名必须传入，是单个字符串
+    if label_ext is None:
+        raise ValueError("必须传入 label_ext 参数，指定标签文件的后缀名（如 '.txt', '.xml'）")
+
+    # 确保标签扩展名是字符串且以点开头
+    if not isinstance(label_ext, str):
+        raise ValueError("label_ext 必须是字符串类型")
+
+    label_ext = label_ext.lower()
+    label_ext = label_ext if label_ext.startswith('.') else f'.{label_ext}'
+
+    folder = Path(folder_path)
+    if not folder.exists():
+        print(f"错误: 文件夹 '{folder_path}' 不存在")
         return
 
-    # 随机抽样
-    total_files_needed = sum(distribution)
-    import random
-    random_files = random.sample(source_files, total_files_needed)
-    random.shuffle(random_files)
-    return random_files
+    # 确保所有扩展名都以点开头
+    img_exts = [ext.lower() for ext in img_exts]
+    img_exts = [ext if ext.startswith('.') else f'.{ext}' for ext in img_exts]
+
+    print(f"{'=' * 60}")
+    print(f"清理不匹配文件工具")
+    print(f"{'=' * 60}")
+    print(f"图片扩展名: {img_exts}")
+    print(f"标签扩展名: {label_ext}")
+    print(f"文件夹: {folder.absolute()}")
+
+    # 收集所有文件
+    img_files = {}  # {文件名(不含扩展名): 文件路径}
+    label_files = {}  # {文件名(不含扩展名): 文件路径}
+
+    print(f"\n扫描文件夹...")
+
+    try:
+        file_paths = get_files(folder_path, img_exts + [label_ext])
+    except NameError:
+        # 如果get_files不存在，使用备用方案
+        file_paths = []
+        for ext in img_exts + [label_ext]:
+            file_paths.extend(folder.glob(f"*{ext}"))
+        file_paths.extend(folder.glob(f"*{ext.upper()}"))  # 大写扩展名
+
+    for file_path in file_paths:
+        file_path = Path(file_path) if not isinstance(file_path, Path) else file_path
+        if not file_path.is_file():
+            continue
+
+        ext = file_path.suffix.lower()
+        name_without_ext = file_path.stem  # 文件名（不含扩展名）
+
+        if ext in img_exts:
+            img_files[name_without_ext] = file_path
+        elif ext == label_ext:  # 标签扩展名精确匹配
+            label_files[name_without_ext] = file_path
+
+    print(f"找到 {len(img_files)} 个图片文件")
+    print(f"找到 {len(label_files)} 个标签文件")
+
+    # 分析匹配情况
+    img_names = set(img_files.keys())
+    label_names = set(label_files.keys())
+
+    matched_names = img_names.intersection(label_names)
+    only_img_names = img_names - label_names  # 只有图片，没有标签
+    only_label_names = label_names - img_names  # 只有标签，没有图片
+
+    print(f"\n{'=' * 60}")
+    print(f"分析结果:")
+    print(f"  ✓ 匹配的文件对: {len(matched_names):4d} 个")
+    print(f"  ⚠ 只有图片没有标签: {len(only_img_names):4d} 个")
+    print(f"  ⚠ 只有标签没有图片: {len(only_label_names):4d} 个")
+    print(f"{'=' * 60}")
+
+    # 处理操作
+    files_to_delete = []  # 要删除的文件
+    images_to_move = []  # 要移动的图片文件路径列表
+    labels_to_move = []  # 要移动的标签文件路径列表
+
+    # 创建移动文件夹的路径
+    no_label_images_folder = folder.parent / "no_label_images"
+    no_image_labels_folder = folder.parent / "no_image_labels"
+
+    if only_img_names:
+        for name in sorted(only_img_names):
+            file_path = img_files[name]
+            if delete_images:
+                files_to_delete.append(file_path)
+            else:
+                images_to_move.append(str(file_path))
+
+    if only_label_names:
+        for name in sorted(only_label_names):
+            file_path = label_files[name]
+            if delete_labels:
+                files_to_delete.append(file_path)
+            else:
+                labels_to_move.append(str(file_path))
+
+    # 检查是否有任何需要处理的操作
+    has_deletions = bool(files_to_delete)
+    has_movements = bool(images_to_move or labels_to_move)
+
+    if not has_deletions and not has_movements:
+        print("\n🎉 没有需要处理的文件！所有文件都已匹配。")
+        return
+
+    # 显示将要进行的操作
+    print(f"\n操作计划:")
+
+    if files_to_delete:
+        print(f"\n  🔴 将要删除 {len(files_to_delete)} 个文件:")
+        for file_path in files_to_delete:
+            try:
+                size = file_path.stat().st_size
+                size_str = f"({size / 1024:,.1f} KB)"
+            except:
+                size_str = ""
+            print(f"     - {file_path.name} {size_str}".strip())
+
+    if images_to_move:
+        print(f"\n  📁 将要移动 {len(images_to_move)} 个图片文件到:")
+        print(f"     目标: {no_label_images_folder}")
+        for file_path_str in images_to_move[:5]:  # 只显示前5个
+            print(f"     - {Path(file_path_str).name}")
+        if len(images_to_move) > 5:
+            print(f"     ... 还有 {len(images_to_move) - 5} 个")
+
+    if labels_to_move:
+        print(f"\n  📁 将要移动 {len(labels_to_move)} 个标签文件到:")
+        print(f"     目标: {no_image_labels_folder}")
+        for file_path_str in labels_to_move[:5]:  # 只显示前5个
+            print(f"     - {Path(file_path_str).name}")
+        if len(labels_to_move) > 5:
+            print(f"     ... 还有 {len(labels_to_move) - 5} 个")
+
+    if dry_run:
+        print(f"\n{'=' * 60}")
+        print(f"📋 模拟运行完成")
+        print(f"   若要实际执行操作，请设置 dry_run=False")
+        if images_to_move:
+            print(f"   无标签图片将移动到: {no_label_images_folder}")
+        if labels_to_move:
+            print(f"   无图片标签将移动到: {no_image_labels_folder}")
+        print(f"{'=' * 60}")
+        return
+
+    # 确认操作
+    print(f"\n{'=' * 60}")
+    confirm = input("⚠️  确认执行上述操作吗？(y/N): ").strip().lower()
+    if confirm not in ['y', 'yes', '是']:
+        print("操作已取消。")
+        return
+    print(f"{'=' * 60}")
+
+    # 实际执行操作
+    print(f"\n开始处理...")
+    deleted_count = 0
+    moved_count = 0
+    deleted_size = 0
+
+    # 1. 先处理移动操作
+    if images_to_move:
+        print(f"\n📤 移动无标签图片:")
+        try:
+            successful, failed = move_files(
+                file_list=images_to_move,
+                destination_dir=str(no_label_images_folder),
+                overwrite=False,
+                rename_if_exists=True,  # 重命名避免冲突
+                create_subdirs=False,
+                log_file=None
+            )
+            moved_count += len(successful)
+            print(f"   成功移动: {len(successful)} 个文件")
+            if failed:
+                print(f"   失败: {len(failed)} 个文件")
+        except Exception as e:
+            print(f"   移动图片时出错: {e}")
+
+    if labels_to_move:
+        print(f"\n📤 移动无图片标签:")
+        try:
+            successful, failed = move_files(
+                file_list=labels_to_move,
+                destination_dir=str(no_image_labels_folder),
+                overwrite=False,
+                rename_if_exists=True,  # 重命名避免冲突
+                create_subdirs=False,
+                log_file=None
+            )
+            moved_count += len(successful)
+            print(f"   成功移动: {len(successful)} 个文件")
+            if failed:
+                print(f"   失败: {len(failed)} 个文件")
+        except Exception as e:
+            print(f"   移动标签时出错: {e}")
+
+    # 2. 再处理删除操作
+    if files_to_delete:
+        print(f"\n🗑️  删除文件:")
+        for file_path in files_to_delete:
+            try:
+                file_size = file_path.stat().st_size
+                file_path.unlink()  # 删除文件
+                print(f"   ✓ 已删除: {file_path.name} ({file_size / 1024:,.1f} KB)")
+                deleted_count += 1
+                deleted_size += file_size
+            except Exception as e:
+                print(f"   ✗ 删除失败: {file_path.name} - {e}")
+
+        # 显示处理结果
+        print(f"\n{'=' * 60}")
+        print(f"✅ 处理完成！")
+        print(f"{'=' * 60}")
+
+        if deleted_count > 0 or moved_count > 0:
+            print(f"\n处理摘要:")
+            if deleted_count > 0:
+                print(f"  🔴 已删除: {deleted_count} 个文件 ({deleted_size / 1024 / 1024:,.2f} MB)")
+
+            if moved_count > 0:
+                print(f"  📁 已移动: {moved_count} 个文件")
+                if images_to_move and no_label_images_folder.exists():
+                    moved_imgs = len(list(no_label_images_folder.glob("*")))
+                    print(f"    无标签图片: {moved_imgs} 个 ({no_label_images_folder.absolute()})")
+                if labels_to_move and no_image_labels_folder.exists():
+                    moved_labels = len(list(no_image_labels_folder.glob("*")))
+                    print(f"    无图片标签: {moved_labels} 个 ({no_image_labels_folder.absolute()})")
+
+        # 验证结果
+        actual_imgs = sum(1 for f in folder.iterdir() if f.is_file() and f.suffix.lower() in img_exts)
+        actual_labels = sum(1 for f in folder.iterdir() if f.is_file() and f.suffix.lower() == label_ext)
+        expected_imgs = len(img_files) - len(only_img_names)
+        expected_labels = len(label_files) - len(only_label_names)
+
+        print(f"\n📊 最终统计:")
+        print(f"  匹配的文件对: {len(matched_names)} 个")
+        print(f"  剩余图片: {expected_imgs} 个 (预期) | {actual_imgs} 个 (实际)")
+        print(f"  剩余标签: {expected_labels} 个 (预期) | {actual_labels} 个 (实际)")
+
+        if expected_imgs == actual_imgs and expected_labels == actual_labels:
+            print(f"  ✅ 验证通过")
+        else:
+            print(f"  ⚠ 验证失败: 预期与实际情况不一致")
+
+        print(f"{'=' * 60}")

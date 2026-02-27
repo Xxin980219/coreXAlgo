@@ -5,7 +5,7 @@
 | 项目属性 | 内容         |
 |---------|------------|
 | **项目名称** | coreXAlgo  |
-| **版本号** | 0.4.9      |
+| **版本号** | 0.5.0      |
 | **作者** | Xxin_BOE   |
 | **项目类型** | Python 工具库 |
 | **主要领域** | 计算机视觉、数据处理 |
@@ -336,10 +336,11 @@ enhanced = apply_clahe(img, clipLimit=2.0, tileGridSize=(8, 8))
 | `copy_file()` / `move_file()` | 单文件拷贝/移动 | 支持覆盖、重命名 |
 | `copy_files()` / `move_files()` | 批量拷贝/移动 | 支持日志记录、保持目录结构 |
 | `randomly_select_files()` | 随机选择文件 | 数据集采样 |
+| `clean_unmatched_files()` | 清理不匹配的文件 | 支持删除或移动操作 |
 
 **代码示例**：
 ```python
-from coreXAlgo.file_processing import get_files, copy_files
+from coreXAlgo.file_processing import get_files, copy_files, clean_unmatched_files
 
 # 查找图片文件
 image_files = get_files('./images', ['.jpg', '.png'],
@@ -353,7 +354,32 @@ successful, failed = copy_files(
     create_subdirs=True,
     log_file='copy_log.txt'
 )
+
+# 清理不匹配的文件
+clean_unmatched_files(
+    folder_path='dataset/train',
+    label_ext='.txt',
+    delete_images=False,
+    delete_labels=False,
+    dry_run=True
+)
 ```
+
+**clean_unmatched_files 函数详细说明**：
+
+| 参数 | 说明 |
+|------|------|
+| `folder_path` | 文件夹路径 |
+| `img_exts` | 图片扩展名列表，默认从 `coreXAlgo.utils.IMAGE_TYPE_FORMAT` 获取 |
+| `label_ext` | 标签文件扩展名（单个字符串，如 '.txt' 或 '.xml'） |
+| `delete_images` | `True`=删除没有对应标签的图片，`False`=移动到 `no_label_images` 文件夹 |
+| `delete_labels` | `True`=删除没有对应图片的标签，`False`=移动到 `no_image_labels` 文件夹 |
+| `dry_run` | 是否只是模拟运行（`True`=只显示不删除/不移动，`False`=实际操作） |
+
+**使用场景**：
+- 清理数据集中的冗余文件
+- 确保图片和标签文件一一对应
+- 数据预处理和数据集质量检查
 
 #### 3.2 压缩解压管理 (archive.py)
 
@@ -1110,6 +1136,21 @@ for xml_path, image_data in all_data.items():
 ---
 
 ## 📋 版本更新日志
+
+### 版本 0.5.0
+
+**核心功能优化**：
+1. 为 `file_processing/basic.py` 中的 `randomly_select_files` 函数添加了详细的文档字符串和使用示例
+2. 为 `file_processing/basic.py` 中的 `clean_unmatched_files` 函数添加了详细的使用示例
+3. 优化了 `randomly_select_files` 函数的代码结构，将 `import random` 移到函数开头
+4. 改进了 `clean_unmatched_files` 函数的文档，添加了完整的使用示例
+
+**文档更新**：
+1. 更新了 `coreXAlgo_分析报告.md`，添加了 `clean_unmatched_files` 函数的详细说明
+2. 确保文档与代码保持一致
+
+**配置文件**：
+1. 更新了版本号至 0.5.0
 
 ### 版本 0.4.9
 

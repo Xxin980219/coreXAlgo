@@ -9,6 +9,7 @@
 - **文件操作**：复制、移动单个或多个文件
 - **文件分析**：查找重复文件、缺失文件
 - **文件选择**：随机选择指定数量的文件
+- **文件清理**：清理不匹配的图片和标签文件
 
 ## 使用示例
 
@@ -66,9 +67,49 @@ print(f"Missing files: {missing}")
 ```python
 from coreXAlgo.file_processing import randomly_select_files
 
-# 随机选择5个文件
-selected = randomly_select_files('directory/', 5, '.jpg')
-print(f"Selected files: {selected}")
+# 随机选择文件用于数据集划分
+distribution = [800, 100, 100]  # 训练集800，验证集100，测试集100
+selected = randomly_select_files('dataset/images', '.jpg', distribution)
+
+# 分配到不同目录
+train_files = selected[:800]
+val_files = selected[800:900]
+test_files = selected[900:]
+
+print(f"训练集: {len(train_files)} 个文件")
+print(f"验证集: {len(val_files)} 个文件")
+print(f"测试集: {len(test_files)} 个文件")
+```
+
+### 文件清理
+
+```python
+from coreXAlgo.file_processing import clean_unmatched_files
+
+# 模拟运行 - 查看需要清理的文件
+clean_unmatched_files(
+    folder_path='dataset/train',
+    label_ext='.txt',
+    dry_run=True
+)
+
+# 实际删除不匹配的文件
+clean_unmatched_files(
+    folder_path='dataset/val',
+    label_ext='.xml',
+    delete_images=True,
+    delete_labels=True,
+    dry_run=False
+)
+
+# 移动不匹配的文件到单独的文件夹
+clean_unmatched_files(
+    folder_path='dataset/test',
+    label_ext='.txt',
+    delete_images=False,  # 移动而不是删除
+    delete_labels=False,  # 移动而不是删除
+    dry_run=False
+)
 ```
 
 ### 生成顺序文件名
