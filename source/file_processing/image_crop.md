@@ -15,15 +15,23 @@
 
 ```python
 from coreXAlgo.file_processing import sliding_crop_image
+import cv2
+
+# 读取图像
+image = cv2.imread('input.jpg')
 
 # 滑动窗口裁剪图像
-crop_images = sliding_crop_image(
-    'input.jpg',
-    crop_size=(512, 512),
-    overlap=0.2,
-    output_dir='crops/'
+crops = sliding_crop_image(
+    image,
+    crop_size=512,
+    stride=320
 )
-print(f"Generated {len(crop_images)} crop images")
+print(f"生成了 {len(crops)} 个裁剪图像块")
+
+# 访问裁剪块
+for i, (crop_img, x, y) in enumerate(crops):
+    cv2.imwrite(f'crop_{i}.jpg', crop_img)
+    print(f"裁剪块 {i}: 位置 ({x}, {y})")
 ```
 
 ### 带标签的图像裁剪
@@ -32,40 +40,51 @@ print(f"Generated {len(crop_images)} crop images")
 from coreXAlgo.file_processing import TaggedImageCrop
 
 # 创建带标签的图像裁剪实例
-cropper = TaggedImageCrop(
-    image_path='input.jpg',
-    annotation_path='annotation.xml',
-    crop_size=(512, 512),
-    overlap=0.2,
-    output_dir='crops/',
-    annotation_format='voc'
+processor = TaggedImageCrop(
+    retrain_no_detect=True,
+    separate_ok_ng=True,
+    save_dir='crops/',
+    target_size=(2000, 1500),
+    crop_size=640,
+    stride=320,
+    separate_images_xml=True,
+    generate_ok_xml=True,
+    verbose=True
 )
 
 # 执行裁剪
-cropper.crop()
-print(f"Generated {len(cropper.crop_images)} crop images with annotations")
+stats = processor.crop_image_and_labels('input.jpg', 'annotation.xml')
+print(f"总裁剪块: {stats['total_crops']}, 有目标块: {stats['ng_crops']}, 无目标块: {stats['ok_crops']}")
 ```
 
 ### 多线程批量裁剪
 
 ```python
-from coreXAlgo.file_processing import batch_multithreaded_image_cropping
+from coreXAlgo.file_processing import TaggedImageCrop, batch_multithreaded_image_cropping
+
+# 创建裁剪处理器
+processor = TaggedImageCrop(
+    retrain_no_detect=True,
+    separate_ok_ng=True,
+    save_dir='crops/',
+    crop_size=640,
+    stride=320,
+    separate_images_xml=True,
+    generate_ok_xml=True
+)
 
 # 批量多线程裁剪图像
-image_annotation_pairs = [
-    ('image1.jpg', 'annotation1.xml'),
-    ('image2.jpg', 'annotation2.xml')
-]
+image_paths = ['image1.jpg', 'image2.jpg', 'image3.jpg']
 
-crop_results = batch_multithreaded_image_cropping(
-    image_annotation_pairs,
-    crop_size=(512, 512),
-    overlap=0.2,
-    output_dir='crops/',
-    annotation_format='voc',
-    max_workers=4
+# 执行批量处理
+stats = batch_multithreaded_image_cropping(
+    image_paths,
+    processor,
+    max_workers=4,
+    verbose=True
 )
-print(f"Processed {len(crop_results)} image-annotation pairs")
+print(f"成功处理: {stats['success_count']}/{stats['total_images']} 张图片")
+print(f"总裁剪块: {stats['total_crops']}, 有目标块: {stats['total_ng']}, 无目标块: {stats['total_ok']}")
 ```
 
 ### 边界框调整
@@ -74,12 +93,12 @@ print(f"Processed {len(crop_results)} image-annotation pairs")
 from coreXAlgo.file_processing import resize_box_to_target
 
 # 调整边界框坐标
-original_box = [x1, y1, x2, y2]  # 原始边界框坐标
-original_size = (original_width, original_height)  # 原始图像尺寸
-target_size = (target_width, target_height)  # 目标图像尺寸
+original_box = [100, 50, 200, 150]  # 原始边界框坐标
+original_size = (1600, 1200)  # 原始图像尺寸
+target_size = (800, 600)  # 目标图像尺寸
 
-resized_box = resize_box_to_target(original_box, original_size, target_size)
-print(f"Resized box: {resized_box}")
+resized_box = resize_box_to_target(original_box, target_size, original_size)
+print(f"调整后的边界框: {resized_box}")
 ```
 
 ## API 参考
@@ -87,6 +106,5 @@ print(f"Resized box: {resized_box}")
 ```{eval-rst}
 .. automodule:: coreXAlgo.file_processing.image_crop
    :members:
-   :undoc-members:
    :show-inheritance:
 ```

@@ -507,6 +507,8 @@ converter_with_mapping.voc_to_yolo_obj('voc/001.xml', 'yolo_labels/001.txt')
 - 自动调整标注信息
 - 支持保留/丢弃无缺陷区域
 - 支持OK/NG图像分开保存
+- 支持图片和XML分开保存
+- 支持为OK图生成XML文件
 - 支持多种缺陷类型的智能判断策略
 
 **代码示例**：
@@ -530,10 +532,20 @@ processor = TaggedImageCrop(
     target_size=(2000, 1500),
     crop_size=640,
     stride=320,
+    separate_images_xml=True,
+    generate_ok_xml=True,
     verbose=True
 )
 stats = processor.crop_image_and_labels("defect_image.jpg", "defect_annotation.xml")
 ```
+
+**新增参数说明**：
+- `separate_images_xml`: 是否将图片和XML分开保存
+  - True: 图片保存到ng_images/ok_images目录，XML保存到ng_xmls/ok_xmls目录
+  - False: 图片和XML保存在同一目录
+- `generate_ok_xml`: 是否为OK图生成XML文件
+  - True: 为所有裁剪块生成XML文件（包括OK图）
+  - False: 只为NG图生成XML文件，OK图不生成XML
 
 **缺陷判断策略**：
 - **MP1U, ML3U**: 相对面积 > 30% 或 绝对面积 > 20000
@@ -1137,6 +1149,16 @@ for xml_path, image_data in all_data.items():
 
 ## 📋 版本更新日志
 
+### 版本 0.5.1
+
+**核心功能优化**：
+1. 更新了 `file_processing/image_crop.py` 中的 `TaggedImageCrop` 类，添加了新参数：
+   - `separate_images_xml`: 控制是否将图片和XML分开保存
+   - `generate_ok_xml`: 控制是否为OK图生成XML文件
+2. 调整了 `__init__` 方法的参数顺序，将 `verbose` 参数移到最后
+3. 优化了目录结构管理，支持更灵活的保存选项
+4. 增强了错误处理和日志记录
+
 ### 版本 0.5.0
 
 **核心功能优化**：
@@ -1144,13 +1166,6 @@ for xml_path, image_data in all_data.items():
 2. 为 `file_processing/basic.py` 中的 `clean_unmatched_files` 函数添加了详细的使用示例
 3. 优化了 `randomly_select_files` 函数的代码结构，将 `import random` 移到函数开头
 4. 改进了 `clean_unmatched_files` 函数的文档，添加了完整的使用示例
-
-**文档更新**：
-1. 更新了 `coreXAlgo_分析报告.md`，添加了 `clean_unmatched_files` 函数的详细说明
-2. 确保文档与代码保持一致
-
-**配置文件**：
-1. 更新了版本号至 0.5.0
 
 ### 版本 0.4.9
 
@@ -1161,13 +1176,6 @@ for xml_path, image_data in all_data.items():
 4. 改进了 `sftp_client.py` 的连接池管理，实现线程安全的连接池
 5. 优化了 `sftp_client.py` 的文件完整性验证，支持 MD5/SHA1 哈希校验
 
-**文档更新**：
-1. 同步更新了 `source/utils/mt_file_downloader.md` 和 `source/utils/sftp_client.md` 文档
-2. 确保文档与代码保持一致
-
-**配置文件**：
-1. 更新了版本号
-
 ### 版本 0.4.8
 
 **核心功能优化**：
@@ -1176,14 +1184,6 @@ for xml_path, image_data in all_data.items():
 3. 新增了 mt_file_downloader.py 模块，替换了旧的 mt_ftp_downloader.py
 4. 改进了数据库客户端 mt_db_client.py 的查询性能和错误处理
 5. 更新了版本号
-
-**文档更新**：
-1. 同步更新了所有模块的文档文件
-2. 优化了文档结构和内容
-3. 确保文档与代码保持一致
-
-**配置文件**：
-1. 更新了项目配置文件，确保构建和部署的稳定性
 
 ### 版本 0.4.7
 

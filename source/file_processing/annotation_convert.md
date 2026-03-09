@@ -32,6 +32,6 @@ converter.convert("input.json", "output.txt", "labelme", "yolo")
 ```{eval-rst}
 .. automodule:: coreXAlgo.file_processing.annotation_convert
    :members:
-   :undoc-members:
+   :exclude-members: AnnotationError, FormatError, FileError, ValidationError, PolygonPoint, BBox
    :show-inheritance:
 ```

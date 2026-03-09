@@ -2,7 +2,7 @@
 
 <div class="hero-section">
   <div class="hero-content">
-    <div class="hero-badge">🚀 v0.5.0</div>
+    <div class="hero-badge">🚀 v0.5.1</div>
     <h1 class="hero-title">coreXAlgo</h1>
     <p class="hero-subtitle">算法开发工具库</p>
     <p class="hero-description">为算法工程师打造的综合性工具集合，提供高效、可靠的技术支持，显著提升开发效率</p>
@@ -527,7 +527,7 @@ coreXAlgo/
 <div class="info-section">
   <div class="info-item">
     <span class="info-label">📦 当前版本</span>
-    <span class="info-value">0.5.0</span>
+    <span class="info-value">0.5.1</span>
   </div>
   <div class="info-item">
     <span class="info-label">🐍 Python 兼容</span>
@@ -535,7 +535,7 @@ coreXAlgo/
   </div>
   <div class="info-item">
     <span class="info-label">📅 更新日期</span>
-    <span class="info-value">2026-02-27</span>
+    <span class="info-value">2026-03-03</span>
   </div>
   <div class="info-item">
     <span class="info-label">👤 作者</span>
@@ -665,12 +665,23 @@ clean_unmatched_files(
 ## 📝 版本更新日志
 
 <div class="changelog-item">
+  <div class="changelog-version">📌 版本 0.5.1 (2026-03-03)</div>
+  <ul class="changelog-list">
+    <li>更新了 file_processing/image_crop.py，添加了新参数：separate_images_xml 和 generate_ok_xml</li>
+    <li>改进了 image_crop.py 的目录结构管理</li>
+    <li>增强了 image_crop.py 的错误处理和日志记录</li>
+    <li>更新了 image_crop.py 的 _process_image 方法以返回正确的错误值</li>
+    <li>为 image_crop.py 添加了 tqdm 安全检查以处理 stdout None 的情况</li>
+    <li>重新排列了 image_crop.py 中 __init__ 方法的参数，将 verbose 移到最后</li>
+    <li>隐藏了 annotation_convert.py 中的某些异常类和类型定义，使其不在文档中显示</li>
+  </ul>
+</div>
+
+<div class="changelog-item">
   <div class="changelog-version">📌 版本 0.5.0 (2026-02-27)</div>
   <ul class="changelog-list">
     <li>为 file_processing/basic.py 中的函数添加了详细的文档字符串和使用示例</li>
     <li>优化了 randomly_select_files 函数的代码结构</li>
-    <li>改进了 clean_unmatched_files 函数的文档</li>
-    <li>更新了项目文档和分析报告</li>
   </ul>
 </div>
 
