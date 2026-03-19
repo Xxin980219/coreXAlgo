@@ -255,7 +255,19 @@ class SFTPClient:
 
     def _get_connection(self, sftp_name: str, retry_count: int = None) -> Optional[paramiko.SFTPClient]:
         """获取SFTP连接，支持自动重连"""
-        for attempt in range(3):  # 最多尝试3次
+        config = None
+        actual_retry_count = retry_count
+        
+        # 首先获取配置信息
+        with self._lock:
+            if sftp_name not in self._configs:
+                self.logger.error(f"SFTP配置 '{sftp_name}' 不存在")
+                return None
+            config = self._configs[sftp_name]
+            actual_retry_count = retry_count if retry_count is not None else config.get('retry_times', 3)
+        
+        # 使用实际的重试次数
+        for attempt in range(actual_retry_count):
             with self._lock:
                 # 检查连接池大小
                 if len(self._connections) > self.max_connections:
@@ -275,33 +287,86 @@ class SFTPClient:
                         self.logger.warning(f"连接已失效，重新连接: {sftp_name}")
                         self._close_connection(sftp_name)
 
-                if sftp_name not in self._configs:
-                    self.logger.error(f"SFTP配置 '{sftp_name}' 不存在")
-                    return None
-
-                config = self._configs[sftp_name]
-                actual_retry_count = retry_count if retry_count is not None else config.get('retry_times', 3)
-
             # 尝试创建新连接
             try:
                 self.logger.info(f"尝试连接到 {sftp_name} ({config['host']}:{config['port']}) 第{attempt + 1}次...")
-                transport = self._create_transport(config)
+                
+                # 获取超时设置
+                timeout = config.get('timeout', 30)
+                
+                # 创建传输层，设置超时
+                transport = paramiko.Transport((config['host'], config['port']))
+                
+                # 优化连接参数
+                transport.default_window_size = 2147483647  # 最大窗口大小
+                transport.packetizer.REKEY_BYTES = 1024 * 1024 * 1024  # 1GB后重新协商密钥
+                transport.packetizer.REKEY_PACKETS = 1000000  # 减少重新协商频率
+                
+                # 设置keepalive
+                keepalive = config.get('keepalive', 30)
+                transport.set_keepalive(keepalive)
+                
+                # 禁用压缩，减少计算压力
+                transport.use_compression(False)
+                
+                # 安全配置 - 使用更兼容的设置
+                try:
+                    if hasattr(transport, 'kex_algorithms'):
+                        transport.kex_algorithms = [
+                            'diffie-hellman-group-exchange-sha256',
+                            'diffie-hellman-group14-sha256',
+                            'diffie-hellman-group16-sha512',
+                            'diffie-hellman-group18-sha512'
+                        ]
+                except Exception as e:
+                    self.logger.debug(f"设置密钥交换算法失败: {e}")
+                
+                try:
+                    if hasattr(transport, 'ciphers'):
+                        transport.ciphers = [
+                            'aes128-ctr', 'aes192-ctr', 'aes256-ctr',
+                            'aes128-gcm@openssh.com', 'aes256-gcm@openssh.com'
+                        ]
+                except Exception as e:
+                    self.logger.debug(f"设置加密算法失败: {e}")
+                
+                try:
+                    if hasattr(transport, 'mac_algorithms'):
+                        transport.mac_algorithms = [
+                            'hmac-sha2-256', 'hmac-sha2-512',
+                            'hmac-sha1', 'hmac-md5'
+                        ]
+                except Exception as e:
+                    self.logger.debug(f"设置MAC算法失败: {e}")
+                
+                # 连接超时设置
                 transport.connect(
                     username=config['username'],
                     password=config.get('password'),
-                    pkey=config.get('pkey')
+                    pkey=config.get('pkey'),
+                    timeout=timeout
                 )
+                
+                # 创建SFTP客户端
                 sftp = paramiko.SFTPClient.from_transport(transport)
+                
+                # 设置SFTP客户端参数
+                sftp.encoding = 'utf-8'
                 
                 # 重新获取锁，将新连接添加到池
                 with self._lock:
                     self._connections[sftp_name] = sftp
+                    self._transports[sftp_name] = transport  # 保存传输层
                     self.logger.info(f"成功连接到 {sftp_name}")
                     return sftp
             except Exception as e:
                 self.logger.error(f"连接失败: {e}")
-                time.sleep(1)  # 短暂暂停后重试
+                # 指数退避重试
+                retry_delay = min(2 ** attempt, 10)  # 最大延迟10秒
+                self.logger.info(f"等待 {retry_delay} 秒后重试...")
+                time.sleep(retry_delay)
 
+        self.logger.error(f"尝试 {actual_retry_count} 次后仍无法连接到 {sftp_name}")
         return None
 
     def _close_connection(self, sftp_name: str):
