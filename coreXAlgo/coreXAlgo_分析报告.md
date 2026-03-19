@@ -27,7 +27,7 @@ coreXAlgo/
 │   ├── ftp_client.py       # FTP客户端
 │   ├── sftp_client.py      # SFTP客户端
 │   ├── mt_db_client.py     # 多线程数据库客户端
-│   └── mt_file_downloader.py # 多线程文件下载器
+│   └── mt_file_transfer.py # 多线程文件传输器
 ├── adv_cv/                 # 高级计算机视觉模块
 │   └── basic.py           # 图像处理功能
 └── file_processing/         # 文件处理模块
@@ -146,32 +146,38 @@ client.download_file("server1", "/remote/file.txt", "./local/file.txt")
 client.upload_file("server1", "./local/file.txt", "/remote/file.txt")
 ```
 
-##### MTFileDownloader (mt_file_downloader.py)
+##### MTFileTransfer (mt_file_transfer.py)
 
 **核心功能**：
-- 多线程文件下载器，替换了旧的 mt_ftp_downloader.py
-- 支持多种协议的文件下载
-- 多线程并行下载，提高下载速度
+- 多线程文件传输器，支持FTP和SFTP协议
+- 多线程并行下载/上传，提高传输速度
 - 断点续传和自动重试机制
 - 进度条显示和回调通知
 - 完善的错误处理和日志记录
+- 支持多实例并行处理
 
 **主要方法**：
 ```python
-from coreXAlgo.utils import MTFileDownloader
+from coreXAlgo.utils import MTFileTransfer
 
-# 初始化下载器
-downloader = MTFileDownloader(max_workers=4, verbose=True)
+# 初始化传输器
+transfer = MTFileTransfer(max_workers=4, verbose=True)
 
-# 下载单个文件
-downloader.download("ftp://example.com/file.zip", "./local/file.zip")
+# 下载文件
+transfer.download_files_by_pathlist(
+    server_name="my_ftp",
+    local_path_list="./local/downloads",
+    remote_dir="/remote/files"
+)
 
-# 批量下载多个文件
-file_list = [
-    ("ftp://example.com/file1.txt", "./local/file1.txt"),
-    ("ftp://example.com/file2.txt", "./local/file2.txt")
-]
-downloader.batch_download(file_list)
+# 多实例并行下载
+success_count = transfer.parallel_download_by_instances(
+    server_name="my_sftp",
+    local_path_list=local_paths,
+    file_path_list=file_list,
+    num_instances=4,
+    workers_per_instance=2
+)
 ```
 
 ##### SFTPClient (sftp_client.py)
@@ -1019,7 +1025,7 @@ for xml_path, image_data in all_data.items():
 | **进度显示** | tqdm |
 | **XML处理** | lxml, xml.etree.ElementTree |
 | **几何计算** | shapely |
-| **网络传输** | paramiko (SFTP), ftplib (FTP), mt_file_downloader (多线程下载) |
+| **网络传输** | paramiko (SFTP), ftplib (FTP), mt_file_transfer (多线程传输) |
 | **数据库** | SQLAlchemy |
 | **数据格式** | JSON, YAML, Pickle |
 | **压缩格式** | zipfile, tarfile, py7zr, rarfile |
@@ -1149,6 +1155,24 @@ for xml_path, image_data in all_data.items():
 
 ## 📋 版本更新日志
 
+### 版本 0.5.2
+
+**核心功能优化**：
+1. 优化了 `utils/ftp_client.py` 和 `utils/sftp_client.py`，添加了多线程支持：
+   - 实现了线程安全的连接池管理
+   - 添加了 `_process_upload_batch` 和 `_process_single_upload` 方法用于并行上传
+   - 添加了 `_process_download_batch` 和 `_process_single_download` 方法用于并行下载
+   - 修复了 `max_workers` 参数未使用的问题
+2. 修复了 `utils/mt_file_transfer.py` 中的返回值处理问题：
+   - 确保 `parallel_download_by_instances` 正确返回成功下载数量
+   - 统一了FTP和SFTP客户端的返回值处理格式
+3. 增强了线程安全机制：
+   - 添加了 `threading.RLock()` 线程安全锁
+   - 实现了线程安全的连接获取和释放
+4. 优化了文件传输性能：
+   - 支持批量处理文件传输
+   - 提高了多线程并发处理能力
+
 ### 版本 0.5.1
 
 **核心功能优化**：
@@ -1172,7 +1196,7 @@ for xml_path, image_data in all_data.items():
 **核心功能优化**：
 1. 修复了 `sftp_client.py` 中下载成功数量统计错误的问题，确保下载结果正确显示
 2. 优化了 `sftp_client.py` 的异常处理逻辑，统一处理各种异常情况
-3. 为 `mt_file_downloader.py` 添加了缺失的 `logging` 模块导入
+3. 为 `mt_file_transfer.py` 添加了缺失的 `logging` 模块导入
 4. 改进了 `sftp_client.py` 的连接池管理，实现线程安全的连接池
 5. 优化了 `sftp_client.py` 的文件完整性验证，支持 MD5/SHA1 哈希校验
 
@@ -1181,7 +1205,7 @@ for xml_path, image_data in all_data.items():
 **核心功能优化**：
 1. 重构了文件处理模块，提升了 annotation_convert.py 和 archive.py 的性能
 2. 优化了工具模块，包括 bbox_util.py、ftp_client.py 和 sftp_client.py
-3. 新增了 mt_file_downloader.py 模块，替换了旧的 mt_ftp_downloader.py
+3. 新增了 mt_file_transfer.py 模块，替换了旧的 mt_ftp_downloader.py
 4. 改进了数据库客户端 mt_db_client.py 的查询性能和错误处理
 5. 更新了版本号
 

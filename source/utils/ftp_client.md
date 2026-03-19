@@ -14,6 +14,8 @@ FTP客户端下载和上传
 - **文件完整性验证**：支持文件传输后的完整性验证
 - **连接保活**：内置NOOP命令发送机制，保持连接活跃
 - **智能重连**：遇到连接错误时自动重新连接
+- **多线程支持**：实现了线程安全的连接池管理，支持并行文件传输
+- **线程安全**：添加了线程安全锁，确保多线程环境下的稳定运行
 
 ## 使用示例
 
@@ -150,6 +152,29 @@ client.download_file(
     local_path="./local/file.txt",
     max_retries=3,  # 最大重试次数
     retry_delay=1  # 重试延迟
+)
+```
+
+### 多线程文件传输
+
+```python
+# 多线程批量下载文件
+client.download_file_list(
+    ftp_name="server1",
+    remote_path_list=remote_files,
+    local_path_list=local_dir,
+    progress_callback=progress_callback,
+    batch_size=20,  # 每批处理文件数量
+    max_workers=4    # 工作线程数量
+)
+
+# 多线程批量上传文件
+client.upload_file_list(
+    ftp_name="server1",
+    local_path_list=local_files,
+    remote_path_list=remote_paths,
+    batch_size=20,  # 每批处理文件数量
+    max_workers=4    # 工作线程数量
 )
 ```
 

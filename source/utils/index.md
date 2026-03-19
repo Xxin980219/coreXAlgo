@@ -65,10 +65,10 @@
 
 - **基础工具**：日志管理、随机种子设置、颜色输出
 - **边界框处理**：边界框转换、合并、可视化
-- **网络传输**：FTP/SFTP 客户端、多线程下载
+- **网络传输**：FTP/SFTP 客户端、多线程文件传输（支持上传和下载）
 - **数据库操作**：多数据库查询客户端
 - **文件处理**：JSON/YAML/ pickle 读写
-- **并发处理**：线程池、并行任务
+- **并发处理**：线程池、并行任务、线程安全连接池
 
 ## 📁 组件列表
 
@@ -103,7 +103,7 @@
 
 **FTP客户端**
 
-提供 FTP 协议的文件上传和下载功能，支持断点续传和进度显示。
+提供 FTP 协议的文件上传和下载功能，支持断点续传、进度显示和多线程并行传输。
 :::
 
 :::{grid-item-card} {octicon}`cache` Mt_db_client
@@ -116,14 +116,14 @@
 轻量级多数据库查询客户端，支持 MySQL、PostgreSQL、SQLite 等多种数据库。
 :::
 
-:::{grid-item-card} {octicon}`download` Mt_file_downloader
-:link: mt_file_downloader
+:::{grid-item-card} {octicon}`download` mt_file_transfer
+:link: mt_file_transfer
 :link-type: doc
 :class-card: component-card
 
-**多线程文件下载器**
+**多线程文件传输器**
 
-多线程并行下载 FTP/SFTP 文件夹的所有文件，支持断点续传和进度显示。
+多线程并行传输 FTP/SFTP 文件，支持上传和下载，支持断点续传、进度显示和多实例并行处理。
 :::
 
 :::{grid-item-card} {octicon}`cloud` Sftp_client
@@ -133,7 +133,7 @@
 
 **SFTP客户端**
 
-提供 SFTP 协议的文件上传和下载功能，优化了连接稳定性和传输效率。
+提供 SFTP 协议的文件上传和下载功能，支持断点续传、进度显示、多线程并行传输和连接稳定性优化。
 :::
 
 ::::
@@ -181,6 +181,6 @@ basic
 bbox_util
 ftp_client
 mt_db_client
-mt_file_downloader
+mt_file_transfer
 sftp_client
 ```

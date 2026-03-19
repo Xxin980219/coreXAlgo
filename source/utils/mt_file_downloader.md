@@ -1,34 +1,36 @@
-# Mt_file_downloader
+# Mt_file_transfer
 
-多线程并行下载FTP/SFTP文件夹的所有文件
+多线程并行传输FTP/SFTP文件的工具类
 
 ## 核心功能
 
-- **多线程并发下载**：支持多线程同时下载多个文件，提高下载速度
+- **多线程并发传输**：支持多线程同时下载/上传多个文件，提高传输速度
 - **连接池管理**：为每个线程创建独立的FTP/SFTP连接，避免连接冲突
 - **协议支持**：同时支持FTP和SFTP协议，统一接口操作
-- **灵活的文件选择**：支持下载整个目录或指定的文件列表
-- **进度回调**：提供实时进度回调功能，方便显示下载进度
-- **文件顺序控制**：支持随机打乱文件顺序，避免集中下载特定目录的文件
-- **下载数量限制**：支持设置最大下载数量，避免一次性下载过多文件
+- **灵活的文件选择**：支持传输整个目录或指定的文件列表
+- **进度回调**：提供实时进度回调功能，方便显示传输进度
+- **文件顺序控制**：支持随机打乱文件顺序，避免集中传输特定目录的文件
+- **传输数量限制**：支持设置最大传输数量，避免一次性传输过多文件
 - **错误处理**：提供详细的错误处理和日志记录
-- **断点续传**：支持文件下载的断点续传功能
-- **文件完整性验证**：自动验证下载文件的完整性
-- **批量处理控制**：支持自定义每批处理文件数量，提高下载稳定性
+- **断点续传**：支持文件传输的断点续传功能
+- **文件完整性验证**：自动验证传输文件的完整性
+- **批量处理控制**：支持自定义每批处理文件数量，提高传输稳定性
 - **文件存在性检查**：支持批量检查文件是否存在
 - **智能连接管理**：内置连接保活、健康检查和自动重连机制
 - **连接预热**：在开始检查前预热连接，确保连接稳定性
 - **服务器友好**：智能的请求间隔，避免服务器限流
 - **详细的日志输出**：支持详细的连接状态和错误处理日志
-- **多实例并行下载**：支持创建多个下载器实例并行处理文件下载
-- **单线程模式支持**：根据用户需求，支持单线程下载模式
+- **多实例并行传输**：支持创建多个传输器实例并行处理文件传输
+- **单线程模式支持**：根据用户需求，支持单线程传输模式
+- **返回值处理优化**：修复了 `parallel_download_by_instances` 方法的返回值处理问题，确保正确返回成功下载数量
+- **统一返回值格式**：统一了FTP和SFTP客户端的返回值处理格式
 
 ## 使用示例
 
 ### 基本使用示例
 
 ```python
-from coreXAlgo.utils.mt_file_downloader import MtFileDownloader
+from coreXAlgo.utils.mt_file_transfer import MTFileTransfer
 
 # 配置FTP服务器信息
 file_config = {
@@ -46,14 +48,14 @@ file_config = {
     }
 }
 
-# 创建下载器实例（初始化时直接传入服务器配置）
-downloader = MtFileDownloader(file_config, workers=4, verbose=True)
+# 创建传输器实例（初始化时直接传入服务器配置）
+transfer = MTFileTransfer(file_config, workers=4, verbose=True)
 
 # 下载整个目录到指定文件夹
 def progress_callback(percent):
     print(f"下载进度: {percent}%")
 
-success_count = downloader.download_files_by_pathlist(
+success_count = transfer.download_files_by_pathlist(
     server_name="my_ftp",  # 可以使用FTP或SFTP配置
     local_path_list="/local/download/path",
     remote_dir="/remote/files",
@@ -72,7 +74,7 @@ print(f"成功下载: {success_count} 个文件")
 file_list = ["/remote/file1.txt", "/remote/file2.jpg", "/remote/file3.pdf"]
 local_paths = ["/local/file1.txt", "/local/file2.jpg", "/local/file3.pdf"]
 
-success_count = downloader.download_files_by_pathlist(
+success_count = transfer.download_files_by_pathlist(
     server_name="my_sftp",  # 使用SFTP配置
     local_path_list=local_paths,
     file_path_list=file_list,
@@ -85,11 +87,11 @@ print(f"成功下载: {success_count} 个文件")
 ### 调整线程数量
 
 ```python
-# 创建更多线程的下载器实例（适用于网络带宽充足的情况）
-downloader = MtFileDownloader(file_config, workers=8, verbose=True)
+# 创建更多线程的传输器实例（适用于网络带宽充足的情况）
+transfer = MTFileTransfer(file_config, workers=8, verbose=True)
 
 # 下载文件
-success_count = downloader.download_files_by_pathlist(
+success_count = transfer.download_files_by_pathlist(
     server_name="my_ftp",
     local_path_list="/local/download/path",
     remote_dir="/remote/large_files",
@@ -102,9 +104,9 @@ print(f"成功下载: {success_count} 个文件")
 ### 自定义批处理大小
 
 ```python
-# 自定义每批处理文件数量，提高下载稳定性
+# 自定义每批处理文件数量，提高传输稳定性
 # 适用于网络不稳定或服务器连接限制较严格的情况
-success_count = downloader.download_files_by_pathlist(
+success_count = transfer.download_files_by_pathlist(
     server_name="my_ftp",
     local_path_list="/local/download/path",
     remote_dir="/remote/large_files",
@@ -115,7 +117,7 @@ success_count = downloader.download_files_by_pathlist(
 print(f"成功下载: {success_count} 个文件")
 
 # 对于SFTP服务器，也可以使用相同的方式设置batch_size
-success_count = downloader.download_files_by_pathlist(
+success_count = transfer.download_files_by_pathlist(
     server_name="my_sftp",
     local_path_list="/local/sftp_downloads",
     remote_dir="/remote/sftp_files",
@@ -130,7 +132,7 @@ print(f"成功下载: {success_count} 个文件")
 
 ```python
 # 使用SFTP协议下载文件
-success_count = downloader.download_files_by_pathlist(
+success_count = transfer.download_files_by_pathlist(
     server_name="my_sftp",  # 使用SFTP配置
     local_path_list="/local/sftp_downloads",
     remote_dir="/remote/sftp_files",
@@ -144,14 +146,14 @@ print(f"成功下载: {success_count} 个文件")
 
 ```python
 # 批量检查文件是否存在
-downloader = MtFileDownloader(file_config, workers=20, verbose=True)
+transfer = MTFileTransfer(file_config, workers=20, verbose=True)
 
 # 准备文件列表
 file_list = ["/remote/file1.txt", "/remote/file2.jpg", "/remote/file3.pdf"]
 local_paths = ["/local/file1.txt", "/local/file2.jpg", "/local/file3.pdf"]
 
 print("开始检查文件存在性...")
-existing_files, existing_local_paths = downloader.check_files_existence(
+existing_files, existing_local_paths = transfer.check_files_existence(
     server_name="my_ftp",
     file_path_list=file_list,
     local_path_list=local_paths,
@@ -162,7 +164,7 @@ print(f"文件检查完成: 存在 {len(existing_files)} 个文件，不存在 {
 
 # 使用存在的文件列表进行下载
 if existing_files:
-    success_count = downloader.download_files_by_pathlist(
+    success_count = transfer.download_files_by_pathlist(
         server_name="my_ftp",
         local_path_list=existing_local_paths,
         file_path_list=existing_files
@@ -174,14 +176,14 @@ if existing_files:
 
 ```python
 # 多线程并行检查大量文件
-downloader = MtFileDownloader(file_config, workers=20, verbose=True)  # 20个线程
+transfer = MTFileTransfer(file_config, workers=20, verbose=True)  # 20个线程
 
 # 准备大量文件列表
 file_list = [f"/remote/file{i}.txt" for i in range(10000)]
 local_paths = [f"/local/file{i}.txt" for i in range(10000)]
 
 print("开始检查文件存在性...")
-existing_files, existing_local_paths = downloader.check_files_existence(
+existing_files, existing_local_paths = transfer.check_files_existence(
     server_name="my_ftp",
     file_path_list=file_list,
     local_path_list=local_paths,
@@ -195,10 +197,10 @@ print(f"文件检查完成: 存在 {len(existing_files)} 个文件，不存在 {
 
 ```python
 # 配置连接管理参数
-downloader = MtFileDownloader(file_config, workers=10, verbose=True)
+transfer = MTFileTransfer(file_config, workers=10, verbose=True)
 
 # 调整连接管理参数
-success_count = downloader.download_files_by_pathlist(
+success_count = transfer.download_files_by_pathlist(
     server_name="my_ftp",
     local_path_list="/local/downloads",
     remote_dir="/remote/files",
@@ -207,26 +209,26 @@ success_count = downloader.download_files_by_pathlist(
 )
 ```
 
-### 最大下载数量默认行为
+### 最大传输数量默认行为
 
 ```python
-# max_download_num 未指定时，默认检查/下载所有文件
-downloader = MtFileDownloader(file_config, workers=5, verbose=True)
+# max_download_num 未指定时，默认检查/传输所有文件
+transfer = MTFileTransfer(file_config, workers=5, verbose=True)
 
 # 检查所有文件
-existing_files, existing_local_paths = downloader.check_files_existence(
+existing_files, existing_local_paths = transfer.check_files_existence(
     server_name="my_ftp",
     file_path_list=file_list,
     local_path_list=local_paths
     # 未指定 max_download_num，默认检查所有
 )
 
-# 下载所有文件
-success_count = downloader.download_files_by_pathlist(
+# 传输所有文件
+success_count = transfer.download_files_by_pathlist(
     server_name="my_ftp",
     local_path_list=existing_local_paths,
     file_path_list=existing_files
-    # 未指定 max_download_num，默认下载所有
+    # 未指定 max_download_num，默认传输所有
 )
 ```
 
@@ -234,11 +236,11 @@ success_count = downloader.download_files_by_pathlist(
 
 ```python
 # 启用详细日志，查看连接状态和错误处理
-downloader = MtFileDownloader(file_config, workers=10, verbose=True)
+transfer = MTFileTransfer(file_config, workers=10, verbose=True)
 
 # 下载文件，自动处理连接错误
 try:
-    success_count = downloader.download_files_by_pathlist(
+    success_count = transfer.download_files_by_pathlist(
         server_name="my_ftp",
         local_path_list="/local/downloads",
         remote_dir="/remote/large_files",
@@ -249,38 +251,38 @@ except Exception as e:
     print(f"下载过程中发生错误: {str(e)}")
 ```
 
-### 多实例并行下载
+### 多实例并行传输
 
 ```python
-# 使用多个下载器实例并行下载文件
-downloader = MtFileDownloader(file_config, workers=8, verbose=True)
+# 使用多个传输器实例并行下载文件
+transfer = MTFileTransfer(file_config, workers=8, verbose=True)
 
 # 准备文件列表
 file_list = [f"/remote/file{i}.txt" for i in range(1000)]
 local_paths = [f"/local/file{i}.txt" for i in range(1000)]
 
-# 使用4个下载器实例并行下载
-success_count = downloader.parallel_download_by_instances(
+# 使用4个传输器实例并行下载
+success_count = transfer.parallel_download_by_instances(
     server_name="my_sftp",
     local_path_list=local_paths,
     file_path_list=file_list,
     callback=lambda current, total, name: print(f"{current}/{total}: {name}"),
     batch_size=150,
-    num_instances=4,  # 创建4个下载器实例
+    num_instances=4,  # 创建4个传输器实例
     workers_per_instance=2  # 每个实例使用2个线程
 )
 
 print(f"成功下载: {success_count} 个文件")
 ```
 
-### 单线程下载模式
+### 单线程传输模式
 
 ```python
-# 创建单线程下载器实例
-downloader = MtFileDownloader(file_config, workers=1, verbose=True)
+# 创建单线程传输器实例
+transfer = MTFileTransfer(file_config, workers=1, verbose=True)
 
 # 下载文件（单线程模式）
-success_count = downloader.download_files_by_pathlist(
+success_count = transfer.download_files_by_pathlist(
     server_name="my_ftp",
     local_path_list="/local/downloads",
     remote_dir="/remote/files",
@@ -318,7 +320,7 @@ print(f"成功下载: {success_count} 个文件")
 ## API参考
 
 ```{eval-rst}
-.. automodule:: coreXAlgo.utils.mt_file_downloader
+.. automodule:: coreXAlgo.utils.mt_file_transfer
    :members:
    :undoc-members:
    :show-inheritance:

@@ -2,6 +2,7 @@ import io
 import os
 import socket
 import time
+import threading
 from ftplib import FTP, error_proto, error_perm, error_temp, all_errors, error_reply
 from typing import Dict, Callable, Optional, List, Union, Tuple, Any
 
@@ -9,63 +10,6 @@ from tqdm import tqdm
 
 from .basic import set_logging
 from .constants import TIMEOUT, RETRY_TIMES
-
-
-def _ftp_block_callback(file_size, percent_callback=None, size_callback=None, process_block=None):
-    """
-    FTP文件传输块回调函数包装器，该函数创建一个回调包装器，用于处理FTP文件传输过程中的数据块回调。
-    支持进度百分比回调、已传输大小回调和原始数据处理。
-
-    Args:
-        file_size (int): 文件总大小（字节数）
-        percent_callback (Tuple[function, optional]): 进度百分比回调函数，接收一个整数参数（0-100）
-        size_callback (Tuple[function, optional]): 已传输大小回调函数，接收两个参数：总文件大小和当前块大小
-        process_block (Tuple[function, optional]): 原始数据处理函数，接收一个bytes参数，用于处理每个数据块（如写入文件）
-
-    Returns:
-        function: 回调包装器函数，接收一个bytes类型的数据块参数
-
-    Example:
-        >>> # 示例用法
-        >>> def print_percent(percent):
-        ...     print(f"进度: {percent}%")
-        >>>
-        >>> def handle_block(data):
-        ...     # 处理数据块，如写入文件
-        ...     pass
-        >>>
-        >>> callback = _ftp_block_callback(
-        ...     file_size=1024000,
-        ...     percent_callback=print_percent,
-        ...     process_block=handle_block
-        ... )
-        >>>
-        >>> # 在FTP传输中使用callback
-        >>> # ftp.retrbinary('RETR filename', callback)
-    """
-    load_progress = [0, -1]  # [load_size, load_percent]
-
-    def _callback_wrapper(data: bytes):
-        """
-        回调包装器内部函数，处理每个数据块，执行相应的回调函数
-
-        Args:
-            data : 当前传输的数据块
-        """
-        if process_block:
-            process_block(data)
-        if percent_callback:
-            load_progress[0] += len(data)
-
-            current_percent = int(100 * load_progress[0] / file_size)
-            if current_percent != load_progress[1]:
-                load_progress[1] = current_percent
-                percent_callback(current_percent)  # 回调百分比
-        if size_callback:
-            size_callback(file_size, len(data))
-
-    return _callback_wrapper
-
 
 class FTPClient:
     """
@@ -135,6 +79,7 @@ class FTPClient:
         self.logger = set_logging("FTPClient", verbose=verbose)
         self.max_connections = max_connections
         self._current_ftp_name = None
+        self._lock = threading.RLock()  # 线程安全锁，支持递归调用
         
         # 验证和标准化配置
         if not ftp_configs:
@@ -289,33 +234,34 @@ class FTPClient:
         Example:
             >>> ftp = client._get_connection("server1")
         """
-        # 检查连接池大小
-        if len(self._connections) > self.max_connections:
-            # 关闭最旧的连接
-            oldest_name = next(iter(self._connections))
-            self.logger.info(f"连接池已满，关闭最旧的连接: {oldest_name}")
-            self._close_connection(oldest_name)
+        with self._lock:
+            # 检查连接池大小
+            if len(self._connections) > self.max_connections:
+                # 关闭最旧的连接
+                oldest_name = next(iter(self._connections))
+                self.logger.info(f"连接池已满，关闭最旧的连接: {oldest_name}")
+                self._close_connection(oldest_name)
 
-        if ftp_name in self._connections:
-            try:
-                # 测试连接是否有效
-                conn = self._connections[ftp_name]
-                conn.voidcmd('NOOP')
-                self.logger.debug(f"复用现有连接: {ftp_name}")
-                return conn
-            except (error_perm, error_proto, socket.error):
-                # 连接已失效，清理
-                self.logger.warning(f"连接已失效，重新连接: {ftp_name}")
-                self._close_connection(ftp_name)
+            if ftp_name in self._connections:
+                try:
+                    # 测试连接是否有效
+                    conn = self._connections[ftp_name]
+                    conn.voidcmd('NOOP')
+                    self.logger.debug(f"复用现有连接: {ftp_name}")
+                    return conn
+                except (error_perm, error_proto, socket.error):
+                    # 连接已失效，清理
+                    self.logger.warning(f"连接已失效，重新连接: {ftp_name}")
+                    self._close_connection(ftp_name)
 
-        if ftp_name not in self._configs:
-            self.logger.error(f"FTP配置 '{ftp_name}' 不存在")
-            return None
+            if ftp_name not in self._configs:
+                self.logger.error(f"FTP配置 '{ftp_name}' 不存在")
+                return None
 
-        config = self._configs[ftp_name]
+            config = self._configs[ftp_name]
 
-        # 使用配置中的重试次数或默认值
-        actual_retry_count = retry_count if retry_count is not None else config.get('retry_times', 3)
+            # 使用配置中的重试次数或默认值
+            actual_retry_count = retry_count if retry_count is not None else config.get('retry_times', 3)
 
         for attempt in range(actual_retry_count):
             try:
@@ -355,9 +301,10 @@ class FTPClient:
                 keepalive = config.get('keepalive', 30)
                 # FTP协议本身不支持心跳，但我们可以定期发送NOOP命令
 
-                # 保存连接
-                self._connections[ftp_name] = ftp
-                self._current_ftp_name = ftp_name
+                # 重新获取锁，将新连接添加到池
+                with self._lock:
+                    self._connections[ftp_name] = ftp
+                    self._current_ftp_name = ftp_name
 
                 self.logger.info(f"✅ 成功连接到FTP: {ftp_name} (模式: {'PASV' if passive else 'PORT'})")
                 return ftp
@@ -1064,7 +1011,7 @@ class FTPClient:
 
     def upload_file_list(self, ftp_name, local_path_list, remote_path_list,
                          progress_callback: Optional[Callable[[int, int, str], None]] = None,
-                         batch_size: int = 20):
+                         batch_size: int = 20, max_workers: int = 1):
         """
         批量上传多个文件
 
@@ -1079,6 +1026,7 @@ class FTPClient:
                 - 参数2: 总文件数
                 - 参数3: 当前文件名
             batch_size (int, optional): 每批处理文件数
+            max_workers (int, optional): 最大并行工作线程数，默认为1
 
         Returns:
             tuple: (成功上传数量, 总文件数量)
@@ -1096,6 +1044,14 @@ class FTPClient:
             ...     ftp_name="server1",
             ...     local_path_list="/local/uploads",
             ...     remote_path_list=["/remote/file1.txt", "/remote/file2.jpg"]
+            ... )
+            >>>
+            >>> # 方式3: 多线程上传
+            >>> success, total = client.upload_file_list(
+            ...     ftp_name="server1",
+            ...     local_path_list=local_files,
+            ...     remote_path_list=remote_paths,
+            ...     max_workers=4
             ... )
         """
         # 处理local_path_list的不同形式
@@ -1124,36 +1080,12 @@ class FTPClient:
             self.logger.info(f"上传批次 {batch_start // batch_size + 1}/{(total_files + batch_size - 1) // batch_size} "
                              f"({batch_start + 1}-{batch_end}/{total_files})")
 
-            batch_success = 0
-            for idx, (local_path, remote_path) in enumerate(batch, 1):
-                file_idx = batch_start + idx
-                filename = os.path.basename(local_path)
+            batch_success, batch_failed = self._process_upload_batch(
+                ftp_name, batch, batch_start, total_files, progress_callback, max_workers
+            )
 
-                if progress_callback:
-                    progress_callback(file_idx, total_files, f"开始上传: {filename}")
-
-                try:
-                    if self.upload_file(ftp_name, local_path, remote_path):
-                        # 验证文件完整性
-                        if self.verify_file_integrity(ftp_name, remote_path, local_path):
-                            success_count += 1
-                            batch_success += 1
-                            if progress_callback:
-                                progress_callback(file_idx, total_files, f"✅ 完成: {filename}")
-                        else:
-                            failed_files.append((local_path, remote_path))
-                            if progress_callback:
-                                progress_callback(file_idx, total_files, f"❌ 完整性验证失败: {filename}")
-                    else:
-                        failed_files.append((local_path, remote_path))
-                        if progress_callback:
-                            progress_callback(file_idx, total_files, f"❌ 失败: {filename}")
-
-                except Exception as e:
-                    self.logger.error(f"处理文件 {filename} 时出错: {e}")
-                    failed_files.append((local_path, remote_path))
-                    if progress_callback:
-                        progress_callback(file_idx, total_files, f"❌ 异常: {filename}")
+            success_count += batch_success
+            failed_files.extend(batch_failed)
 
             self.logger.info(f"批次完成: {batch_success}/{len(batch)} 成功")
 
@@ -1169,6 +1101,180 @@ class FTPClient:
                 self.logger.warning(f"  - {os.path.basename(local_path)}")
 
         return success_count, total_files
+
+    def _process_download_batch(self, ftp_name, batch, batch_start, total_files, progress_callback, max_workers, bufsize):
+        """
+        处理单个下载批次（内部方法）
+        
+        Args:
+            ftp_name (str): FTP配置名称
+            batch (List[Tuple[str, str]]): 下载任务批次
+            batch_start (int): 批次开始索引
+            total_files (int): 总文件数
+            progress_callback (Optional[Callable]): 进度回调函数
+            max_workers (int): 最大并行工作线程数
+            bufsize (int): 缓冲区大小
+            
+        Returns:
+            Tuple[int, List[Tuple[str, str]]]: (成功数量, 失败任务列表)
+        """
+        import concurrent.futures
+        from concurrent.futures import ThreadPoolExecutor
+
+        batch_success = 0
+        batch_failed = []
+
+        # 使用线程池并行处理
+        with ThreadPoolExecutor(max_workers=min(max_workers, len(batch))) as executor:
+            # 提交任务
+            future_to_task = {}
+            for idx, (remote_path, local_path) in enumerate(batch, 1):
+                file_idx = batch_start + idx
+                filename = os.path.basename(remote_path)
+                future = executor.submit(
+                    self._process_single_download,
+                    ftp_name, remote_path, local_path, file_idx, total_files, progress_callback, bufsize
+                )
+                future_to_task[future] = (remote_path, local_path, filename)
+
+            # 收集结果
+            for future in concurrent.futures.as_completed(future_to_task):
+                remote_path, local_path, filename = future_to_task[future]
+                try:
+                    success = future.result()
+                    if success:
+                        batch_success += 1
+                    else:
+                        batch_failed.append((remote_path, local_path))
+                except Exception as e:
+                    self.logger.error(f"处理文件 {filename} 时出错: {e}")
+                    batch_failed.append((remote_path, local_path))
+                    if progress_callback:
+                        progress_callback(batch_start + len(batch_failed), total_files, f"❌ 异常: {filename}")
+
+        return batch_success, batch_failed
+
+    def _process_single_download(self, ftp_name, remote_path, local_path, file_idx, total_files, progress_callback=None, bufsize=1024):
+        """
+        处理单个下载任务（用于并行处理）
+        """
+        filename = os.path.basename(remote_path)
+
+        if progress_callback:
+            progress_callback(file_idx, total_files, f"开始下载: {filename}")
+
+        try:
+            # 下载文件
+            if self.download_file(ftp_name, remote_path, local_path, bufsize):
+                # 验证文件完整性
+                if self.verify_file_integrity(ftp_name, remote_path, local_path):
+                    if progress_callback:
+                        progress_callback(file_idx, total_files, f"✅ 完成: {filename}")
+                    return True
+                else:
+                    if progress_callback:
+                        progress_callback(file_idx, total_files, f"❌ 完整性验证失败: {filename}")
+                    return False
+            else:
+                if progress_callback:
+                    progress_callback(file_idx, total_files, f"❌ 失败: {filename}")
+                return False
+
+        except Exception as e:
+            self.logger.error(f"处理文件 {filename} 时出错: {e}")
+            if progress_callback:
+                progress_callback(file_idx, total_files, f"❌ 异常: {filename}")
+            return False
+
+    def _process_upload_batch(self, ftp_name, batch, batch_start, total_files, progress_callback, max_workers):
+        """
+        处理单个上传批次（内部方法）
+        
+        Args:
+            ftp_name (str): FTP配置名称
+            batch (List[Tuple[str, str]]): 上传任务批次
+            batch_start (int): 批次开始索引
+            total_files (int): 总文件数
+            progress_callback (Optional[Callable]): 进度回调函数
+            max_workers (int): 最大并行工作线程数
+            
+        Returns:
+            Tuple[int, List[Tuple[str, str]]]: (成功数量, 失败任务列表)
+        """
+        import concurrent.futures
+        from concurrent.futures import ThreadPoolExecutor
+
+        batch_success = 0
+        batch_failed = []
+
+        # 使用线程池并行处理
+        with ThreadPoolExecutor(max_workers=min(max_workers, len(batch))) as executor:
+            # 提交任务
+            future_to_task = {}
+            for idx, (local_path, remote_path) in enumerate(batch, 1):
+                file_idx = batch_start + idx
+                filename = os.path.basename(local_path)
+                future = executor.submit(
+                    self._process_single_upload,
+                    ftp_name, local_path, remote_path, file_idx, total_files, progress_callback
+                )
+                future_to_task[future] = (local_path, remote_path, filename)
+
+            # 收集结果
+            for future in concurrent.futures.as_completed(future_to_task):
+                local_path, remote_path, filename = future_to_task[future]
+                try:
+                    success = future.result()
+                    if success:
+                        batch_success += 1
+                    else:
+                        batch_failed.append((local_path, remote_path))
+                except Exception as e:
+                    self.logger.error(f"处理文件 {filename} 时出错: {e}")
+                    batch_failed.append((local_path, remote_path))
+                    if progress_callback:
+                        progress_callback(batch_start + len(batch_failed), total_files, f"❌ 异常: {filename}")
+
+        return batch_success, batch_failed
+
+    def _process_single_upload(self, ftp_name, local_path, remote_path, file_idx, total_files, progress_callback=None):
+        """
+        处理单个上传任务（用于并行处理）
+        """
+        filename = os.path.basename(local_path)
+
+        if progress_callback:
+            progress_callback(file_idx, total_files, f"开始上传: {filename}")
+
+        try:
+            # 检查本地文件是否存在
+            if not os.path.exists(local_path):
+                self.logger.error(f"本地文件不存在: {local_path}")
+                if progress_callback:
+                    progress_callback(file_idx, total_files, f"❌ 失败: {filename}")
+                return False
+
+            # 上传文件
+            if self.upload_file(ftp_name, local_path, remote_path):
+                # 验证文件完整性
+                if self.verify_file_integrity(ftp_name, remote_path, local_path):
+                    if progress_callback:
+                        progress_callback(file_idx, total_files, f"✅ 完成: {filename}")
+                    return True
+                else:
+                    if progress_callback:
+                        progress_callback(file_idx, total_files, f"❌ 完整性验证失败: {filename}")
+                    return False
+            else:
+                if progress_callback:
+                    progress_callback(file_idx, total_files, f"❌ 失败: {filename}")
+                return False
+
+        except Exception as e:
+            self.logger.error(f"处理文件 {filename} 时出错: {e}")
+            if progress_callback:
+                progress_callback(file_idx, total_files, f"❌ 异常: {filename}")
+            return False
 
     def download_file_list(self, ftp_name, remote_path_list, local_path_list, bufsize=1024,
                            progress_callback: Optional[Callable[[int, int, str], None]] = None,
@@ -1230,19 +1336,6 @@ class FTPClient:
         success_count = 0
         failed_files = []
 
-        # 添加连接保活机制
-        conn = None
-        if hasattr(self, '_ftp') and self._ftp:
-            conn = self._ftp
-        else:
-            conn = self._get_connection(ftp_name)
-        
-        noop_count = 0
-        noop_interval = 5  # 每5个文件发送一次NOOP命令保持连接
-        reconnect_count = 0
-        max_reconnects = 10  # 最多重新连接10次
-        batch_reconnect_size = 50  # 每50个文件重新连接一次
-
         # 分批处理
         for batch_start in range(0, total_files, batch_size):
             batch_end = min(batch_start + batch_size, total_files)
@@ -1251,72 +1344,12 @@ class FTPClient:
             self.logger.info(f"下载批次 {batch_start // batch_size + 1}/{(total_files + batch_size - 1) // batch_size} "
                              f"({batch_start + 1}-{batch_end}/{total_files})")
 
-            # 定期重新连接，避免长时间使用同一连接
-            if batch_start > 0 and batch_start % batch_reconnect_size == 0:
-                self.logger.info(f"定期重新连接 (已处理{batch_start}个文件)")
-                try:
-                    self._close_connection(ftp_name)
-                    conn = self._get_connection(ftp_name)
-                    self.logger.info(f"定期重新连接成功")
-                except Exception as reconnect_error:
-                    self.logger.warning(f"定期重新连接失败: {str(reconnect_error)}")
-                    # 尝试获取新连接
-                    try:
-                        conn = self._get_connection(ftp_name)
-                    except Exception as e:
-                        self.logger.error(f"获取新连接失败: {str(e)}")
+            batch_success, batch_failed = self._process_download_batch(
+                ftp_name, batch, batch_start, total_files, progress_callback, max_workers, bufsize
+            )
 
-            batch_success = 0
-            for idx, (remote_path, local_path) in enumerate(batch, 1):
-                file_idx = batch_start + idx
-                filename = os.path.basename(remote_path)
-
-                if progress_callback:
-                    progress_callback(file_idx, total_files, f"开始下载: {filename}")
-
-                try:
-                    # 使用download_file方法处理单个文件，支持断点续传和重试
-                    if self.download_file(ftp_name, remote_path, local_path, bufsize):
-                        # 验证文件完整性
-                        if self.verify_file_integrity(ftp_name, remote_path, local_path):
-                            success_count += 1
-                            batch_success += 1
-                            if progress_callback:
-                                progress_callback(file_idx, total_files, f"✅ 完成: {filename}")
-                        else:
-                            failed_files.append((remote_path, local_path))
-                            if progress_callback:
-                                progress_callback(file_idx, total_files, f"❌ 完整性验证失败: {filename}")
-                    else:
-                        failed_files.append((remote_path, local_path))
-                        if progress_callback:
-                            progress_callback(file_idx, total_files, f"❌ 失败: {filename}")
-
-                except Exception as e:
-                    self.logger.error(f"处理文件 {filename} 时出错: {e}")
-                    failed_files.append((remote_path, local_path))
-                    if progress_callback:
-                        progress_callback(file_idx, total_files, f"❌ 异常: {filename}")
-                finally:
-                    # 连接保活：定期发送NOOP命令
-                    if conn:
-                        noop_count += 1
-                        if noop_count >= noop_interval:
-                            try:
-                                conn.voidcmd('NOOP')
-                                self.logger.debug(f"发送NOOP命令保持连接 (已处理{file_idx}个文件)")
-                                noop_count = 0
-                            except Exception as e:
-                                self.logger.warning(f"发送NOOP命令失败: {str(e)}")
-                                # 尝试重新连接
-                                if reconnect_count < max_reconnects:
-                                    try:
-                                        self._close_connection(ftp_name)
-                                        conn = self._get_connection(ftp_name)
-                                        reconnect_count += 1
-                                        self.logger.info(f"NOOP失败后重新连接成功 (第{reconnect_count}次)")
-                                    except Exception as reconnect_error:
-                                        self.logger.error(f"重新连接失败: {str(reconnect_error)}")
+            success_count += batch_success
+            failed_files.extend(batch_failed)
 
             self.logger.info(f"批次完成: {batch_success}/{len(batch)} 成功")
 

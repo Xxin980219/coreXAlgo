@@ -4,7 +4,7 @@ import os
 import random
 import time
 from threading import RLock
-from typing import Dict, Union, List, Optional, Callable
+from typing import Dict, Union, List, Optional, Callable, Tuple
 from .ftp_client import FTPClient
 from .sftp_client import SFTPClient
 from .basic import set_logging
@@ -1017,6 +1017,9 @@ class MtFileDownloader:
                     progress_callback=lambda p, t, n: self._handle_callback(callback, p, t, n),
                     batch_size=batch_size
                 )
+                # 处理返回值格式
+                if isinstance(success_count, tuple):
+                    success_count = success_count[0]
 
             self.logger.info(f"下载完成: {success_count}/{total_files} 个文件")
 
@@ -1301,4 +1304,518 @@ class MtFileDownloader:
         return success_count
 
 
+class MtFileUploader:
+    """
+    多线程并行上传文件到FTP/SFTP服务器
+
+    支持多线程并发上传，自动管理连接池，提供进度回调功能。
+    适用于需要批量上传文件到FTP或SFTP服务器的场景。
+    """
+
+    def __init__(self, configs: Dict[str, dict], workers=4, verbose=False):
+        """
+        初始化多线程FTP/SFTP上传器
+
+        Args:
+            configs (Dict[str, dict]): FTP或SFTP配置字典，格式为：
+                # FTP配置示例
+                {
+                    "ftp_server1": {
+                        "host": "ftp.example.com",
+                        "port": 21,
+                        "username": "username",
+                        "password": "password",
+                        "timeout": 30,
+                        "type": "ftp"  # 可选，默认为ftp
+                    },
+                    # SFTP配置示例
+                    "sftp_server1": {
+                        "host": "sftp.example.com",
+                        "port": 22,
+                        "username": "username",
+                        "password": "password",
+                        "timeout": 30,
+                        "type": "sftp"  # 必须指定为sftp
+                    }
+                }
+            workers (int, optional): 工作线程数量，默认为4
+            verbose (bool, optional): 是否启用详细日志，默认为False
+
+        Example:
+            >>> # FTP配置
+            >>> ftp_config = {
+            ...     "my_ftp": {
+            ...         "host": "192.168.1.100",
+            ...         "port": 21,
+            ...         "username": "admin",
+            ...         "password": "123456",
+            ...         "type": "ftp"
+            ...     }
+            ... }
+            >>> 
+            >>> # SFTP配置
+            >>> sftp_config = {
+            ...     "my_sftp": {
+            ...         "host": "192.168.1.100",
+            ...         "port": 22,
+            ...         "username": "admin",
+            ...         "password": "123456",
+            ...         "type": "sftp"
+            ...     }
+            ... }
+            >>> 
+            >>> uploader = MtFileUploader({**ftp_config, **sftp_config}, workers=4, verbose=True)
+        """
+        self._workers = workers
+        self._configs = configs
+        self._lock = RLock()
+        self.logger = set_logging("MtFileUploader", verbose=verbose)
+
+    def check_local_files_existence(self, local_path_list: Union[str, List[str]]) -> Tuple[List[str], Union[str, List[str]]]:
+        """
+        检查本地文件是否存在，并过滤出存在的文件
+
+        Args:
+            local_path_list (Union[str, List[str]]): 本地文件路径，可以是：
+                - str: 本地目录路径，上传该目录下的所有文件
+                - list: 本地文件路径列表
+
+        Returns:
+            Tuple[List[str], Union[str, List[str]]]: 过滤后的文件列表和对应的本地路径列表
+                - 当local_path_list为str时，返回的第二个元素仍为str
+                - 当local_path_list为list时，返回的第二个元素为过滤后的本地路径列表
+
+        Example:
+            >>> uploader = MtFileUploader(configs, workers=4)
+            >>> local_paths = ["/local/file1.txt", "/local/file2.jpg", "/local/nonexistent.txt"]
+            >>> existing_files, existing_local_paths = uploader.check_local_files_existence(local_paths)
+            >>> # existing_files 将只包含存在的文件
+            >>>
+            >>> # 上传目录下的所有文件
+            >>> existing_files, existing_local_paths = uploader.check_local_files_existence("/local/directory")
+        """
+        existing_files = []
+        existing_local_paths = []
+
+        if isinstance(local_path_list, str):
+            # 处理目录
+            if os.path.isdir(local_path_list):
+                for root, _, files in os.walk(local_path_list):
+                    for file in files:
+                        file_path = os.path.join(root, file)
+                        existing_files.append(file_path)
+                return existing_files, local_path_list
+            elif os.path.isfile(local_path_list):
+                return [local_path_list], local_path_list
+            else:
+                self.logger.warning(f"本地路径不存在: {local_path_list}")
+                return [], local_path_list
+        else:
+            # 处理文件列表
+            for file_path in local_path_list:
+                if os.path.isfile(file_path):
+                    existing_files.append(file_path)
+                    existing_local_paths.append(file_path)
+                else:
+                    self.logger.warning(f"本地文件不存在: {file_path}")
+            return existing_files, existing_local_paths
+
+    def upload_files_by_pathlist(self, server_name: str, local_path_list: Union[str, List[str]], remote_path_list: Union[str, List[str]],
+                                max_upload_num: Optional[int] = None, shuffle: bool = False, 
+                                callback: Optional[Callable] = None, batch_size: int = 20):
+        """
+        上传文件到FTP/SFTP服务器
+
+        Args:
+            server_name (str): 服务器配置名称，必须在初始化时提供的configs中
+            local_path_list (Union[str, List[str]]): 本地文件路径，可以是：
+                - str: 本地目录路径，上传该目录下的所有文件
+                - list: 本地文件路径列表
+            remote_path_list (Union[str, List[str]]): 远程保存路径，可以是：
+                - str: 远程目录路径，文件保存在该目录下，文件名保持本地文件名
+                - list: 每个文件对应的完整远程保存路径，长度必须与文件列表一致
+            max_upload_num (int, optional): 最大上传数量，默认为None（上传所有文件）
+            shuffle (bool, optional): 是否随机打乱文件顺序，默认为False
+            callback (Callable, optional): 进度回调函数，支持两种格式：
+                - Callable[[int], None]: 接收一个整数参数（0-100）表示总体进度
+                - Callable[[int, int, str], None]: 接收三个参数(current, total, name)表示当前文件进度
+            batch_size (int, optional): 每批处理文件数，默认为20
+
+        Returns:
+            int: 成功上传的文件数量
+
+        Raises:
+            ValueError: 当服务器配置不存在或参数不合法时
+            RuntimeError: 当上传过程中发生错误时
+
+        Example:
+            >>> # 初始化上传器
+            >>> configs = {
+            ...     "my_ftp": {
+            ...         "host": "192.168.1.100",
+            ...         "port": 21,
+            ...         "username": "admin",
+            ...         "password": "123456",
+            ...         "type": "ftp"
+            ...     }
+            ... }
+            >>> uploader = MtFileUploader(configs, workers=4, verbose=True)
+            >>>
+            >>> # 上传整个本地目录到远程目录
+            >>> success_count = uploader.upload_files_by_pathlist(
+            ...     server_name="my_ftp",
+            ...     local_path_list="/local/directory",
+            ...     remote_path_list="/remote/directory",
+            ...     shuffle=True,
+            ...     callback=lambda p: print(f"进度: {p}%"),
+            ...     batch_size=10
+            ... )
+            >>>
+            >>> # 上传指定文件列表到不同远程路径
+            >>> local_files = ["/local/file1.txt", "/local/file2.jpg"]
+            >>> remote_paths = ["/remote/file1.txt", "/remote/file2.jpg"]
+            >>> success_count = uploader.upload_files_by_pathlist(
+            ...     server_name="my_ftp",
+            ...     local_path_list=local_files,
+            ...     remote_path_list=remote_paths,
+            ...     shuffle=True,
+            ...     callback=lambda current, total, name: print(f"{current}/{total}: {name}"),
+            ...     batch_size=5
+            ... )
+            >>>
+            >>> # 限制上传数量（只上传前10个文件）
+            >>> success_count = uploader.upload_files_by_pathlist(
+            ...     server_name="my_ftp",
+            ...     local_path_list="/local/directory",
+            ...     remote_path_list="/remote/directory",
+            ...     max_upload_num=10,
+            ...     batch_size=5
+            ... )
+        """
+        if batch_size <= 0:
+            raise ValueError("batch_size必须大于0")
+        if server_name not in self._configs:
+            raise ValueError(f"服务器配置 '{server_name}' 不存在，可用配置: {list(self._configs.keys())}")
+
+        # 检查本地文件存在性
+        local_files, _ = self.check_local_files_existence(local_path_list)
+        if not local_files:
+            self.logger.warning("无文件可上传")
+            return 0
+
+        # 准备远程路径列表
+        if isinstance(remote_path_list, str):
+            # 远程路径是目录
+            remote_files = []
+            for local_file in local_files:
+                file_name = os.path.basename(local_file)
+                remote_path = os.path.join(remote_path_list, file_name)
+                # 确保路径分隔符正确
+                if remote_path_list.endswith('/') or remote_path_list.endswith('\\'):
+                    remote_path = remote_path_list + file_name
+                remote_files.append(remote_path)
+        else:
+            # 远程路径是列表
+            if len(remote_path_list) < len(local_files):
+                raise ValueError("remote_path_list长度必须大于或等于本地文件列表长度")
+            remote_files = remote_path_list[:len(local_files)]
+
+        if shuffle:
+            # 随机打乱文件顺序
+            combined = list(zip(local_files, remote_files))
+            random.seed(42)
+            random.shuffle(combined)
+            local_files, remote_files = zip(*combined)
+            local_files = list(local_files)
+            remote_files = list(remote_files)
+
+        # 限制上传数量
+        if max_upload_num is not None:
+            local_files = local_files[:max_upload_num]
+            remote_files = remote_files[:max_upload_num]
+        total_files = len(local_files)
+
+        # 获取服务器类型
+        server_config = self._configs[server_name]
+        server_type = server_config.get('type', 'ftp').lower()
+
+        # 创建客户端连接
+        client = None
+        success_count = 0
+
+        try:
+            if server_type == 'sftp':
+                client = SFTPClient(self._configs)
+                # 上传文件列表
+                success_count = client.upload_file_list(
+                    sftp_name=server_name,
+                    local_path_list=local_files,
+                    remote_path_list=remote_files,
+                    progress_callback=lambda p, t, n: self._handle_callback(callback, p, t, n),
+                    batch_size=batch_size
+                )
+                # 处理返回值格式
+                if isinstance(success_count, tuple):
+                    success_count = success_count[0]
+            else:
+                client = FTPClient(self._configs)
+                client._ftpconnect(server_name)
+                # 上传文件列表
+                success_count = client.upload_file_list(
+                    ftp_name=server_name,
+                    local_path_list=local_files,
+                    remote_path_list=remote_files,
+                    bufsize=1024,
+                    progress_callback=lambda p, t, n: self._handle_callback(callback, p, t, n),
+                    batch_size=batch_size
+                )
+
+            self.logger.info(f"上传完成: {success_count}/{total_files} 个文件")
+
+        except Exception as e:
+            self.logger.error(f"上传过程中发生错误: {str(e)}")
+            raise RuntimeError(f"文件上传失败: {str(e)}")
+        finally:
+            # 确保客户端连接正确关闭
+            if client:
+                try:
+                    if hasattr(client, 'close'):
+                        client.close()
+                    elif hasattr(client, '_close'):
+                        client._close()
+                except Exception as e:
+                    self.logger.warning(f"关闭连接时出错: {str(e)}")
+
+        return success_count
+
+    def _handle_callback(self, callback, current, total, name):
+        """
+        处理回调函数
+        
+        Args:
+            callback: 回调函数
+            current: 当前进度
+            total: 总进度
+            name: 文件名称
+        """
+        if callback:
+            try:
+                # 尝试作为三参数回调调用
+                callback(current, total, name)
+            except TypeError:
+                # 如果失败，作为单参数回调调用
+                progress = int(current / total * 100)
+                callback(progress)
+
+    def parallel_upload_by_instances(self, server_name: str, local_path_list: Union[str, List[str]], 
+                                   remote_path_list: Union[str, List[str]], max_upload_num: Optional[int] = None, 
+                                   shuffle: bool = False, callback: Optional[Callable] = None, 
+                                   batch_size: int = 20, num_instances: int = 4, 
+                                   workers_per_instance: int = 2):
+        """
+        使用多个上传器实例并行上传文件
+        
+        Args:
+            server_name (str): 服务器配置名称，必须在初始化时提供的configs中
+            local_path_list (Union[str, List[str]]): 本地文件路径，可以是：
+                - str: 本地目录路径，上传该目录下的所有文件
+                - list: 本地文件路径列表
+            remote_path_list (Union[str, List[str]]): 远程保存路径，可以是：
+                - str: 远程目录路径，文件保存在该目录下，文件名保持本地文件名
+                - list: 每个文件对应的完整远程保存路径，长度必须与文件列表一致
+            max_upload_num (int, optional): 最大上传数量，默认为None（上传所有文件）
+            shuffle (bool, optional): 是否随机打乱文件顺序，默认为False
+            callback (Callable, optional): 进度回调函数，支持两种格式：
+                - Callable[[int], None]: 接收一个整数参数（0-100）表示总体进度
+                - Callable[[int, int, str], None]: 接收三个参数(current, total, name)表示当前文件进度
+            batch_size (int, optional): 每批处理文件数，默认为20
+            num_instances (int, optional): 上传器实例数量，默认为4
+            workers_per_instance (int, optional): 每个上传器实例的工作线程数，默认为2
+        
+        Returns:
+            int: 成功上传的文件数量
+        
+        Raises:
+            ValueError: 当服务器配置不存在或参数不合法时
+            RuntimeError: 当上传过程中发生错误时
+        
+        Example:
+            >>> # 初始化上传器
+            >>> uploader = MtFileUploader(configs, workers=8, verbose=True)
+            >>> 
+            >>> # 使用4个上传器实例并行上传
+            >>> success_count = uploader.parallel_upload_by_instances(
+            ...     server_name="my_ftp",
+            ...     local_path_list=local_files,
+            ...     remote_path_list=remote_paths,
+            ...     callback=lambda current, total, name: print(f"{current}/{total}: {name}"),
+            ...     batch_size=150,
+            ...     num_instances=4,
+            ...     workers_per_instance=2
+            ... )
+            >>> print(f"成功上传: {success_count} 个文件")
+        """
+        if num_instances <= 0:
+            raise ValueError("num_instances必须大于0")
+        if workers_per_instance <= 0:
+            raise ValueError("workers_per_instance必须大于0")
+        if batch_size <= 0:
+            raise ValueError("batch_size必须大于0")
+        if server_name not in self._configs:
+            raise ValueError(f"服务器配置 '{server_name}' 不存在，可用配置: {list(self._configs.keys())}")
+        
+        # 检查本地文件存在性
+        local_files, _ = self.check_local_files_existence(local_path_list)
+        if not local_files:
+            self.logger.warning("无文件可上传")
+            return 0
+
+        # 准备远程路径列表
+        if isinstance(remote_path_list, str):
+            # 远程路径是目录
+            remote_files = []
+            for local_file in local_files:
+                file_name = os.path.basename(local_file)
+                remote_path = os.path.join(remote_path_list, file_name)
+                remote_files.append(remote_path)
+        else:
+            # 远程路径是列表
+            if len(remote_path_list) < len(local_files):
+                raise ValueError("remote_path_list长度必须大于或等于本地文件列表长度")
+            remote_files = remote_path_list[:len(local_files)]
+        
+        if shuffle:
+            # 随机打乱文件顺序
+            combined = list(zip(local_files, remote_files))
+            random.seed(42)
+            random.shuffle(combined)
+            local_files, remote_files = zip(*combined)
+            local_files = list(local_files)
+            remote_files = list(remote_files)
+        
+        # 限制上传数量
+        if max_upload_num is not None:
+            local_files = local_files[:max_upload_num]
+            remote_files = remote_files[:max_upload_num]
+        total_files = len(local_files)
+        
+        # 分割文件列表
+        self.logger.info(f"启动 {num_instances} 个上传器实例并行上传")
+        self.logger.info(f"每个实例线程数: {workers_per_instance}")
+        self.logger.info(f"总线程数: {num_instances * workers_per_instance}")
+        
+        chunk_size = len(local_files) // num_instances
+        local_file_chunks = []
+        remote_file_chunks = []
+        
+        for i in range(num_instances):
+            start_idx = i * chunk_size
+            end_idx = (i + 1) * chunk_size if i < num_instances - 1 else len(local_files)
+            local_file_chunks.append(local_files[start_idx:end_idx])
+            remote_file_chunks.append(remote_files[start_idx:end_idx])
+            
+            self.logger.info(f"实例 {i}: 负责 {len(local_file_chunks[-1])} 个文件")
+        
+        # 定义上传器实例的工作函数
+        def instance_worker(instance_id, local_chunk, remote_chunk):
+            """
+            单个上传器实例的工作函数
+            """
+            self.logger.info(f"上传器实例 {instance_id} 开始处理")
+            
+            # 创建新的上传器实例
+            instance_uploader = MtFileUploader(
+                configs=self._configs,
+                workers=workers_per_instance,
+                verbose=self.logger.isEnabledFor(logging.DEBUG)
+            )
+            
+            # 上传文件
+            success_count = instance_uploader.upload_files_by_pathlist(
+                server_name=server_name,
+                local_path_list=local_chunk,
+                remote_path_list=remote_chunk,
+                callback=callback,
+                batch_size=batch_size
+            )
+            
+            self.logger.info(f"上传器实例 {instance_id} 完成: 成功上传 {success_count}/{len(local_chunk)} 个文件")
+            return success_count
+        
+        # 使用线程池运行多个上传器实例
+        self.logger.info("开始并行上传...")
+        all_success_count = 0
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=num_instances) as executor:
+            # 提交任务
+            futures = []
+            for i in range(num_instances):
+                future = executor.submit(
+                    instance_worker,
+                    i,
+                    local_file_chunks[i],
+                    remote_file_chunks[i]
+                )
+                futures.append(future)
+            
+            # 收集结果
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    success_count = future.result()
+                    all_success_count += success_count
+                except Exception as e:
+                    self.logger.error(f"上传器实例执行失败: {e}")
+        
+        # 打印总结果
+        self.logger.info(f"\n=== 并行上传完成 ===")
+        self.logger.info(f"总成功上传数量: {all_success_count}")
+        self.logger.info(f"总文件数量: {len(local_files)}")
+        
+        return all_success_count
+
+    @staticmethod
+    def upload_files_chunk(uploader_id: int, local_file_chunk: List[str], remote_file_chunk: List[str], 
+                         configs: Dict[str, dict], server_name: str, workers: int = 2, verbose: bool = True):
+        """
+        上传文件块
+        
+        Args:
+            uploader_id: 上传器ID
+            local_file_chunk: 要上传的本地文件路径列表
+            remote_file_chunk: 对应的远程保存路径列表
+            configs: 服务器配置字典
+            server_name: 服务器配置名称
+            workers: 每个上传器的线程数，默认为2
+            verbose: 是否启用详细日志，默认为True
+        
+        Returns:
+            int: 成功上传的文件数量
+        """
+        print(f"上传器 {uploader_id} 开始处理 {len(local_file_chunk)} 个文件")
+        success_count = 0
+        
+        try:
+            # 创建上传器实例
+            uploader = MtFileUploader(
+                configs=configs, 
+                workers=workers, 
+                verbose=verbose
+            )
+            
+            # 上传文件
+            print(f"上传器 {uploader_id}: 开始上传文件...")
+            success_count = uploader.upload_files_by_pathlist(
+                server_name=server_name,
+                local_path_list=local_file_chunk,
+                remote_path_list=remote_file_chunk,
+                callback=lambda current, total, name: print(f"上传器 {uploader_id}: {current}/{total}: {name}"),
+                batch_size=150
+            )
+            
+            print(f"上传器 {uploader_id} 完成: 成功上传 {success_count}/{len(local_file_chunk)} 个文件")
+            
+            return success_count
+        except Exception as e:
+            print(f"上传器 {uploader_id} 执行失败: {str(e)}")
+            return 0
 

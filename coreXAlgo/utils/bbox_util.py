@@ -1,5 +1,5 @@
-import json
 import os
+
 try:
     from typing import Dict, Tuple, Union, Optional, List, Literal
 except ImportError:
@@ -518,6 +518,352 @@ def merge_adjacent_boxes(detections, vertical_threshold=20, horizontal_threshold
 
     return merged
 
+def merge_detections_industrial(
+        detections_df,
+        merge_threshold=50,
+        code_priority=None,
+        iou_threshold=0.1,
+        contain_ratio=0.1,
+        max_expansion=3,
+        distance_type='euclidean',  # euclidean, manhattan, chebyshev
+        confidence_type='max',  # max, avg, min, weighted
+        allow_different_class=False,
+        class_whitelist=None,
+        class_blacklist=None,
+        image_width=None,
+        image_height=None,
+        edge_threshold=0.1  # 边缘区域阈值，0-1
+):
+    """
+    工业缺陷检测专用框合并函数
+
+    此函数将YOLO检测结果中重叠、邻近或包含关系的缺陷框进行合并，
+    合并策略考虑缺陷类别优先级和置信度。
+
+    Args:
+        detections_df: pandas DataFrame, 包含以下列:
+                      ['xmin', 'ymin', 'xmax', 'ymax', 'confidence', 'code']
+        merge_threshold: 合并阈值（像素），默认50
+        code_priority: 缺陷类别优先级列表，默认None（使用置信度优先）
+        iou_threshold: IOU阈值，控制重叠合并敏感度，默认0.1
+        contain_ratio: 包含关系面积比例阈值，默认0.1
+        max_expansion: 最大面积膨胀倍数，默认3
+        distance_type: 距离计算方式，默认'euclidean'
+        confidence_type: 置信度计算方式，默认'max'
+        allow_different_class: 是否允许不同类别合并，默认False
+        class_whitelist: 类别白名单，只有在白名单中的类别才会合并
+        class_blacklist: 类别黑名单，黑名单中的类别不会合并
+        image_width: 图像宽度，用于位置相关策略
+        image_height: 图像高度，用于位置相关策略
+        edge_threshold: 边缘区域阈值，0-1，用于位置相关策略
+
+    Returns:
+        pandas DataFrame: 合并后的检测结果，格式同输入
+    """
+    import math
+    import pandas as pd
+
+    if detections_df.empty or len(detections_df) <= 1:
+        return detections_df.copy()
+
+    # 准备合并数据
+    detections_list = []
+    for idx, row in detections_df.iterrows():
+        width = row['xmax'] - row['xmin']
+        height = row['ymax'] - row['ymin']
+        area = width * height
+        detections_list.append({
+            'index': idx,
+            'confidence': row['confidence'],
+            'xmin': row['xmin'],
+            'ymin': row['ymin'],
+            'xmax': row['xmax'],
+            'ymax': row['ymax'],
+            'code': row['code'],
+            'area': area,
+            'original_indices': [idx]  # 保留原始索引
+        })
+
+    # 按优先级和置信度排序
+    if code_priority:
+        # 创建优先级映射
+        priority_map = {code: i for i, code in enumerate(code_priority)}
+        # 按优先级（升序）和置信度（降序）排序
+        detections_list.sort(key=lambda x: (
+            priority_map.get(x['code'], len(code_priority)),
+            -x['confidence']
+        ))
+    else:
+        # 仅按置信度排序
+        detections_list.sort(key=lambda x: -x['confidence'])
+
+    def calculate_iou(box1, box2):
+        """计算两个框的IOU"""
+        inter_w = max(0, min(box1['xmax'], box2['xmax']) - max(box1['xmin'], box2['xmin']))
+        inter_h = max(0, min(box1['ymax'], box2['ymax']) - max(box1['ymin'], box2['ymin']))
+        inter_area = inter_w * inter_h
+        area1 = box1['area']
+        area2 = box2['area']
+        union_area = area1 + area2 - inter_area
+        return inter_area / union_area if union_area > 0 else 0
+
+    def calculate_distance(box1, box2, distance_type=distance_type):
+        """计算两个框之间的距离"""
+        # 计算框的中心点
+        center1_x = (box1['xmin'] + box1['xmax']) / 2
+        center1_y = (box1['ymin'] + box1['ymax']) / 2
+        center2_x = (box2['xmin'] + box2['xmax']) / 2
+        center2_y = (box2['ymin'] + box2['ymax']) / 2
+
+        dx = abs(center1_x - center2_x)
+        dy = abs(center1_y - center2_y)
+
+        if distance_type == 'euclidean':
+
+            return math.sqrt(dx ** 2 + dy ** 2)
+        elif distance_type == 'manhattan':
+            return dx + dy
+        elif distance_type == 'chebyshev':
+            return max(dx, dy)
+        else:
+            return math.sqrt(dx ** 2 + dy ** 2)  # 默认欧式距离
+
+    def is_edge_box(box, image_width, image_height, edge_threshold=edge_threshold):
+        """判断框是否位于边缘区域"""
+        if not image_width or not image_height:
+            return False
+
+        # 计算框的中心坐标
+        center_x = (box['xmin'] + box['xmax']) / 2
+        center_y = (box['ymin'] + box['ymax']) / 2
+
+        # 检查是否在边缘区域
+        edge_width = image_width * edge_threshold
+        edge_height = image_height * edge_threshold
+
+        return (center_x < edge_width or center_x > image_width - edge_width or
+                center_y < edge_height or center_y > image_height - edge_height)
+
+    def should_merge(box1, box2, threshold=merge_threshold):
+        """判断两个框是否应该合并"""
+        # 检查类别是否允许合并
+        if not allow_different_class and box1['code'] != box2['code']:
+            return False
+
+        # 检查类别白名单和黑名单
+        if class_whitelist:
+            if box1['code'] not in class_whitelist or box2['code'] not in class_whitelist:
+                return False
+        if class_blacklist:
+            if box1['code'] in class_blacklist or box2['code'] in class_blacklist:
+                return False
+
+        # 计算IOU
+        iou = calculate_iou(box1, box2)
+
+        # 判断包含关系
+        box1_contains_box2 = (box1['xmin'] <= box2['xmin'] and box1['xmax'] >= box2['xmax'] and
+                              box1['ymin'] <= box2['ymin'] and box1['ymax'] >= box2['ymax'])
+        box2_contains_box1 = (box2['xmin'] <= box1['xmin'] and box2['xmax'] >= box1['xmax'] and
+                              box2['ymin'] <= box1['ymin'] and box2['ymax'] >= box1['ymax'])
+
+        # 包含关系面积限制
+        if box1_contains_box2:
+            if box2['area'] / box1['area'] < contain_ratio:
+                return False
+        if box2_contains_box1:
+            if box1['area'] / box2['area'] < contain_ratio:
+                return False
+
+        # 计算距离
+        distance = calculate_distance(box1, box2)
+
+        # 距离分离判断
+        edge_dist_x = max(0, box1['xmin'] - box2['xmax'], box2['xmin'] - box1['xmax'])
+        edge_dist_y = max(0, box1['ymin'] - box2['ymax'], box2['ymin'] - box1['ymax'])
+
+        # 位置相关策略
+        current_threshold = threshold
+        if image_width and image_height:
+            # 检查是否有框位于边缘区域
+            box1_edge = is_edge_box(box1, image_width, image_height)
+            box2_edge = is_edge_box(box2, image_width, image_height)
+
+            # 边缘区域的合并阈值更严格
+            if box1_edge or box2_edge:
+                current_threshold = threshold * 0.5
+
+        # 合并条件：IOU大于阈值、包含关系、或距离小于阈值
+        return (iou > iou_threshold) or box1_contains_box2 or box2_contains_box1 or (distance < current_threshold)
+
+    def merge_two_boxes(box1, box2):
+        """合并两个框，返回合并后的结果"""
+        # 确定合并后的类别（基于优先级或置信度）
+        if code_priority:
+            priority1 = priority_map.get(box1['code'], len(code_priority))
+            priority2 = priority_map.get(box2['code'], len(code_priority))
+            if priority1 < priority2:
+                merged_code = box1['code']
+            elif priority1 > priority2:
+                merged_code = box2['code']
+            else:
+                # 优先级相同，考虑置信度和面积综合决策
+                if box1['confidence'] > box2['confidence']:
+                    merged_code = box1['code']
+                elif box1['confidence'] < box2['confidence']:
+                    merged_code = box2['code']
+                else:
+                    # 置信度相同，取面积大的
+                    merged_code = box1['code'] if box1['area'] >= box2['area'] else box2['code']
+        else:
+            # 无优先级设置，取置信度高的
+            merged_code = box1['code'] if box1['confidence'] >= box2['confidence'] else box2['code']
+
+        # 计算合并后的置信度
+        if confidence_type == 'max':
+            merged_confidence = max(box1['confidence'], box2['confidence'])
+        elif confidence_type == 'avg':
+            merged_confidence = (box1['confidence'] + box2['confidence']) / 2
+        elif confidence_type == 'min':
+            merged_confidence = min(box1['confidence'], box2['confidence'])
+        elif confidence_type == 'weighted':
+            # 按面积加权
+            total_area = box1['area'] + box2['area']
+            merged_confidence = (box1['confidence'] * box1['area'] + box2['confidence'] * box2['area']) / total_area
+        else:
+            merged_confidence = max(box1['confidence'], box2['confidence'])
+
+        # 计算合并后的边界框
+        merged_xmin = min(box1['xmin'], box2['xmin'])
+        merged_ymin = min(box1['ymin'], box2['ymin'])
+        merged_xmax = max(box1['xmax'], box2['xmax'])
+        merged_ymax = max(box1['ymax'], box2['ymax'])
+
+        # 计算合并后的面积
+        merged_width = merged_xmax - merged_xmin
+        merged_height = merged_ymax - merged_ymin
+        merged_area = merged_width * merged_height
+
+        # 面积膨胀限制
+        max_allowed_area = max(box1['area'], box2['area']) * max_expansion
+        if merged_area > max_allowed_area:
+            # 限制面积膨胀
+            scale_factor = math.sqrt(max_allowed_area / merged_area)
+            center_x = (merged_xmin + merged_xmax) / 2
+            center_y = (merged_ymin + merged_ymax) / 2
+            new_width = merged_width * scale_factor
+            new_height = merged_height * scale_factor
+            merged_xmin = center_x - new_width / 2
+            merged_ymin = center_y - new_height / 2
+            merged_xmax = center_x + new_width / 2
+            merged_ymax = center_y + new_height / 2
+            merged_area = new_width * new_height
+
+        # 长宽比合理性检查
+        aspect_ratio = merged_width / merged_height if merged_height > 0 else float('inf')
+        if aspect_ratio < 0.1 or aspect_ratio > 10:
+            # 调整为更合理的长宽比
+            target_ratio = 1.0  # 目标长宽比
+            if aspect_ratio < 0.1:
+                # 太窄，增加宽度
+                new_width = merged_height * target_ratio
+                center_x = (merged_xmin + merged_xmax) / 2
+                merged_xmin = center_x - new_width / 2
+                merged_xmax = center_x + new_width / 2
+            elif aspect_ratio > 10:
+                # 太宽，增加高度
+                new_height = merged_width / target_ratio
+                center_y = (merged_ymin + merged_ymax) / 2
+                merged_ymin = center_y - new_height / 2
+                merged_ymax = center_y + new_height / 2
+            merged_width = merged_xmax - merged_xmin
+            merged_height = merged_ymax - merged_ymin
+            merged_area = merged_width * merged_height
+
+        # 合并原始索引
+        merged_indices = box1.get('original_indices', []) + box2.get('original_indices', [])
+
+        return {
+            'confidence': merged_confidence,
+            'xmin': merged_xmin,
+            'ymin': merged_ymin,
+            'xmax': merged_xmax,
+            'ymax': merged_ymax,
+            'code': merged_code,
+            'area': merged_area,
+            'original_indices': merged_indices
+        }
+
+    # 并查集算法实现
+    class UnionFind:
+        def __init__(self, size):
+            self.parent = list(range(size))
+            self.rank = [0] * size
+
+        def find(self, x):
+            if self.parent[x] != x:
+                self.parent[x] = self.find(self.parent[x])
+            return self.parent[x]
+
+        def union(self, x, y):
+            x_root = self.find(x)
+            y_root = self.find(y)
+            if x_root == y_root:
+                return False
+            if self.rank[x_root] < self.rank[y_root]:
+                self.parent[x_root] = y_root
+            else:
+                self.parent[y_root] = x_root
+                if self.rank[x_root] == self.rank[y_root]:
+                    self.rank[x_root] += 1
+            return True
+
+    # 使用并查集进行合并
+    n = len(detections_list)
+    uf = UnionFind(n)
+
+    # 构建合并关系
+    for i in range(n):
+        for j in range(i + 1, n):
+            if should_merge(detections_list[i], detections_list[j]):
+                uf.union(i, j)
+
+    # 按集合分组
+    groups = {}
+    for i in range(n):
+        root = uf.find(i)
+        if root not in groups:
+            groups[root] = []
+        groups[root].append(detections_list[i])
+
+    # 合并每组内的所有框
+    final_boxes = []
+    for group in groups.values():
+        if len(group) == 1:
+            final_boxes.append(group[0])
+        else:
+            # 迭代合并组内所有框
+            current_box = group[0]
+            for other_box in group[1:]:
+                current_box = merge_two_boxes(current_box, other_box)
+            final_boxes.append(current_box)
+
+    # 转换为DataFrame
+    result_data = []
+    for box in final_boxes:
+        result_data.append({
+            'xmin': int(box['xmin']),
+            'ymin': int(box['ymin']),
+            'xmax': int(box['xmax']),
+            'ymax': int(box['ymax']),
+            'confidence': round(box['confidence'], 4),
+            'code': box['code'],
+            'original_indices': box.get('original_indices', [])  # 保留原始索引
+        })
+
+
+    return pd.DataFrame(result_data)
+
 
 class DetectionVisualizer:
     """
@@ -561,7 +907,7 @@ class DetectionVisualizer:
 
     @classmethod
     def visualize(
-            cls,
+            self,
             image: np.ndarray,
             detections: List[dict],
             output_path: Optional[str] = None,
@@ -584,7 +930,7 @@ class DetectionVisualizer:
         if image is None or image.size == 0:
             raise ValueError("输入图像为空")
 
-        cls._validate_new_detection_format(detections)
+        self._validate_new_detection_format(detections)
 
         result_img = image.copy()
         if result_img.ndim == 2:
@@ -592,12 +938,12 @@ class DetectionVisualizer:
 
         try:
             if mode == 'fast':
-                result_img = cls._render_fast_mode_new(result_img, detections, **kwargs)
+                result_img = self._render_fast_mode_new(result_img, detections, **kwargs)
             else:
-                result_img = cls._render_high_quality_mode_new(result_img, detections, **kwargs)
+                result_img = self._render_high_quality_mode_new(result_img, detections, **kwargs)
 
             if output_path:
-                cls._save_image(result_img, output_path)
+                self._save_image(result_img, output_path)
 
         except Exception as e:
             print(f"[可视化错误] 渲染失败: {str(e)}")
@@ -606,7 +952,7 @@ class DetectionVisualizer:
         return result_img
 
     @classmethod
-    def _validate_new_detection_format(cls, detections: List[dict]):
+    def _validate_new_detection_format(self, detections: List[dict]):
         """验证新格式的检测结果"""
         if not isinstance(detections, list):
             raise ValueError("检测结果必须是列表格式")
@@ -649,7 +995,7 @@ class DetectionVisualizer:
                     raise ValueError(f"第{i}个检测的第{j}个点包含无效坐标")
 
     @classmethod
-    def _render_fast_mode_new(cls, image: np.ndarray, detections: List[dict], **kwargs) -> np.ndarray:
+    def _render_fast_mode_new(self, image: np.ndarray, detections: List[dict], **kwargs) -> np.ndarray:
         """快速渲染模式 - 支持新数据格式"""
         rendered_image = image.copy()
 
@@ -662,11 +1008,11 @@ class DetectionVisualizer:
 
                 # 根据shapeType选择绘制方法
                 if shape_type == 'rectangle':
-                    cls._draw_rectangle_fast(rendered_image, label, confidence, points)
+                    self._draw_rectangle_fast(rendered_image, label, confidence, points)
                 elif shape_type == 'line':
-                    cls._draw_line_fast(rendered_image, label, confidence, points)
+                    self._draw_line_fast(rendered_image, label, confidence, points)
                 elif shape_type == 'polygon':
-                    cls._draw_polygon_fast(rendered_image, label, confidence, points)
+                    self._draw_polygon_fast(rendered_image, label, confidence, points)
 
             except Exception as e:
                 print(f"[警告] 快速模式绘制跳过异常检测: {str(e)}")
@@ -675,13 +1021,13 @@ class DetectionVisualizer:
         return rendered_image
 
     @classmethod
-    def _draw_rectangle_fast(cls, image: np.ndarray, label: str, confidence: float, points: List[List[float]]):
+    def _draw_rectangle_fast(self, image: np.ndarray, label: str, confidence: float, points: List[List[float]]):
         """快速模式绘制矩形"""
         # 提取坐标点
         x1, y1 = map(int, points[0])
         x2, y2 = map(int, points[1])
 
-        if not cls._is_valid_bbox(image, x1, y1, x2, y2):
+        if not self._is_valid_bbox(image, x1, y1, x2, y2):
             return
 
         # 自适应参数
@@ -689,20 +1035,20 @@ class DetectionVisualizer:
         font_scale = max(0.4, min(image.shape[:2]) / 2000)
 
         # 获取颜色
-        bbox_color = cls._get_class_color(label)
+        bbox_color = self._get_class_color(label)
 
         # 绘制矩形框
         cv2.rectangle(image, (x1, y1), (x2, y2), bbox_color, line_thickness)
 
         # 智能标签位置计算
-        label_x, label_y, text_anchor = cls._get_smart_label_position(image, points, 'rectangle')
+        label_x, label_y, text_anchor = self._get_smart_label_position(image, points, 'rectangle')
 
         # 绘制标签
-        cls._draw_label_fast(image, label, confidence, label_x, label_y, bbox_color,
-                             font_scale, text_anchor=text_anchor)
+        self._draw_label_fast(image, label, confidence, label_x, label_y, bbox_color,
+                              font_scale, text_anchor=text_anchor)
 
     @classmethod
-    def _draw_line_fast(cls, image: np.ndarray, label: str, confidence: float, points: List[List[float]]):
+    def _draw_line_fast(self, image: np.ndarray, label: str, confidence: float, points: List[List[float]]):
         """快速模式绘制线段"""
         # 提取起点和终点
         x1, y1 = map(int, points[0])
@@ -718,7 +1064,7 @@ class DetectionVisualizer:
         font_scale = max(0.4, min(image.shape[:2]) / 2000)
 
         # 获取颜色
-        line_color = cls._get_class_color(label)
+        line_color = self._get_class_color(label)
 
         # 绘制线段
         cv2.line(image, (x1, y1), (x2, y2), line_color, line_thickness)
@@ -729,14 +1075,14 @@ class DetectionVisualizer:
         cv2.circle(image, (x2, y2), endpoint_radius, line_color, -1)
 
         # 智能标签位置计算
-        label_x, label_y, text_anchor = cls._get_smart_label_position(image, points, 'line')
+        label_x, label_y, text_anchor = self._get_smart_label_position(image, points, 'line')
 
         # 绘制标签
-        cls._draw_label_fast(image, label, confidence, label_x, label_y, line_color,
-                             font_scale, text_anchor=text_anchor)
+        self._draw_label_fast(image, label, confidence, label_x, label_y, line_color,
+                              font_scale, text_anchor=text_anchor)
 
     @classmethod
-    def _draw_polygon_fast(cls, image: np.ndarray, label: str, confidence: float, points: List[List[float]]):
+    def _draw_polygon_fast(self, image: np.ndarray, label: str, confidence: float, points: List[List[float]]):
         """快速模式绘制多边形"""
         # 转换坐标格式
         points_array = np.array(points, dtype=np.int32).reshape((-1, 1, 2))
@@ -746,20 +1092,20 @@ class DetectionVisualizer:
         font_scale = max(0.4, min(image.shape[:2]) / 2000)
 
         # 获取颜色
-        polygon_color = cls._get_class_color(label)
+        polygon_color = self._get_class_color(label)
 
         # 绘制多边形边框
         cv2.polylines(image, [points_array], True, polygon_color, line_thickness)
 
         # 智能标签位置计算
-        label_x, label_y, text_anchor = cls._get_smart_label_position(image, points, 'polygon')
+        label_x, label_y, text_anchor = self._get_smart_label_position(image, points, 'polygon')
 
         # 绘制标签
-        cls._draw_label_fast(image, label, confidence, label_x, label_y, polygon_color,
-                             font_scale, text_anchor=text_anchor)
+        self._draw_label_fast(image, label, confidence, label_x, label_y, polygon_color,
+                              font_scale, text_anchor=text_anchor)
 
     @classmethod
-    def _get_smart_label_position(cls, image: np.ndarray, points: List[List[float]],
+    def _get_smart_label_position(self, image: np.ndarray, points: List[List[float]],
                                   shape_type: str) -> Tuple[int, int, str]:
         """
         智能计算标签位置，避免被遮挡
@@ -815,10 +1161,10 @@ class DetectionVisualizer:
             # 选择最佳位置（优先选择有最多空间的位置）
             if positions:
                 # 按可用空间排序
-                sorted_positions = sorted(positions, key=lambda p: cls._get_position_score(p, h, w))
+                sorted_positions = sorted(positions, key=lambda p: self._get_position_score(p, h, w))
                 best_position = sorted_positions[0]
                 label_x, label_y = int(best_position[1]), int(best_position[2])
-                text_anchor = cls._get_text_anchor_for_position(best_position[0])
+                text_anchor = self._get_text_anchor_for_position(best_position[0])
             else:
                 # 回退到默认位置
                 label_x, label_y = int(x1), int(max(y1, margin))
@@ -854,7 +1200,7 @@ class DetectionVisualizer:
             min_y, max_y = min(ys), max(ys)
 
             # 检查中心点是否在多边形内
-            if cls._point_in_polygon(center_x, center_y, points):
+            if self._point_in_polygon(center_x, center_y, points):
                 # 中心点在内，使用中心位置
                 label_x, label_y = int(center_x), int(center_y)
                 text_anchor = 'center'
@@ -875,7 +1221,7 @@ class DetectionVisualizer:
         return int(label_x), int(label_y), text_anchor
 
     @classmethod
-    def _get_position_score(cls, position: Tuple[str, float, float], h: int, w: int) -> float:
+    def _get_position_score(self, position: Tuple[str, float, float], h: int, w: int) -> float:
         """
         计算位置得分，得分越低越优先
         """
@@ -901,7 +1247,7 @@ class DetectionVisualizer:
         return score
 
     @classmethod
-    def _get_text_anchor_for_position(cls, position: str) -> str:
+    def _get_text_anchor_for_position(self, position: str) -> str:
         """根据位置获取文本锚点"""
         anchor_map = {
             'top': 'bottom',
@@ -913,7 +1259,7 @@ class DetectionVisualizer:
         return anchor_map.get(position, 'center')
 
     @classmethod
-    def _point_in_polygon(cls, x: float, y: float, polygon: List[List[float]]) -> bool:
+    def _point_in_polygon(self, x: float, y: float, polygon: List[List[float]]) -> bool:
         """判断点是否在多边形内"""
         n = len(polygon)
         inside = False
@@ -933,7 +1279,7 @@ class DetectionVisualizer:
         return inside
 
     @classmethod
-    def _draw_label_fast(cls, image: np.ndarray, label: str, confidence: float,
+    def _draw_label_fast(self, image: np.ndarray, label: str, confidence: float,
                          x: int, y: int, color: Tuple[int, int, int], font_scale: float,
                          text_anchor: str = 'center'):
         """
@@ -942,7 +1288,7 @@ class DetectionVisualizer:
         label_text = f"{label}-{confidence:.2f}" if confidence > 0 else label
 
         (text_width, text_height), baseline = cv2.getTextSize(
-            label_text, cls.DEFAULT_FONT, font_scale, 1)
+            label_text, self.DEFAULT_FONT, font_scale, 1)
 
         # 根据锚点计算文本背景位置
         if text_anchor == 'center':
@@ -976,15 +1322,15 @@ class DetectionVisualizer:
         overlay = image.copy()
         cv2.rectangle(overlay, (text_bg_x1, text_bg_y1),
                       (text_bg_x2, text_bg_y2), color, -1)
-        cv2.addWeighted(overlay, cls.LABEL_BG_ALPHA, image, 1 - cls.LABEL_BG_ALPHA, 0, image)
+        cv2.addWeighted(overlay, self.LABEL_BG_ALPHA, image, 1 - self.LABEL_BG_ALPHA, 0, image)
 
         # 绘制文本
         text_y = text_bg_y2 - baseline // 2
         cv2.putText(image, label_text, (text_bg_x1, text_y),
-                    cls.DEFAULT_FONT, font_scale, cls.TEXT_COLOR, 1)
+                    self.DEFAULT_FONT, font_scale, self.TEXT_COLOR, 1)
 
     @classmethod
-    def _render_high_quality_mode_new(cls, image: np.ndarray, detections: List[dict], **kwargs) -> np.ndarray:
+    def _render_high_quality_mode_new(self, image: np.ndarray, detections: List[dict], **kwargs) -> np.ndarray:
         """高质量渲染模式 - 支持新数据格式"""
         height, width = image.shape[:2]
 
@@ -1013,14 +1359,14 @@ class DetectionVisualizer:
                 points = detection['points']
                 confidence = detection.get('result', {}).get('confidence', 0)
 
-                color = cls._get_mpl_class_color(label)
+                color = self._get_mpl_class_color(label)
 
                 if shape_type == 'rectangle':
-                    cls._draw_rectangle_hq(ax, label, confidence, points, color, base_font_size, height, width)
+                    self._draw_rectangle_hq(ax, label, confidence, points, color, base_font_size, height, width)
                 elif shape_type == 'line':
-                    cls._draw_line_hq(ax, label, confidence, points, color, base_font_size, height, width)
+                    self._draw_line_hq(ax, label, confidence, points, color, base_font_size, height, width)
                 elif shape_type == 'polygon':
-                    cls._draw_polygon_hq(ax, label, confidence, points, color, base_font_size, height, width)
+                    self._draw_polygon_hq(ax, label, confidence, points, color, base_font_size, height, width)
 
             except Exception as e:
                 print(f"[警告] 高质量模式绘制跳过异常检测: {str(e)}")
@@ -1038,7 +1384,7 @@ class DetectionVisualizer:
         return blended_img
 
     @classmethod
-    def _draw_rectangle_hq(cls, ax, label: str, confidence: float, points: List[List[float]],
+    def _draw_rectangle_hq(self, ax, label: str, confidence: float, points: List[List[float]],
                            color: str, base_font_size: float, height: int, width: int):
         """高质量模式绘制矩形"""
         x0, y0 = points[0]
@@ -1058,10 +1404,10 @@ class DetectionVisualizer:
 
         # 智能添加标签
         label_text = f"{label}-{confidence:.2f}" if confidence > 0 else label
-        cls._add_smart_shape_label(ax, label_text, x0, y0, x1, y1, color, base_font_size, height, width)
+        self._add_smart_shape_label(ax, label_text, x0, y0, x1, y1, color, base_font_size, height, width)
 
     @classmethod
-    def _draw_line_hq(cls, ax, label: str, confidence: float, points: List[List[float]],
+    def _draw_line_hq(self, ax, label: str, confidence: float, points: List[List[float]],
                       color: str, base_font_size: float, height: int, width: int):
         """高质量模式绘制线段"""
         x1, y1 = points[0]
@@ -1082,7 +1428,7 @@ class DetectionVisualizer:
 
         # 智能标签位置
         label_text = f"{label}-{confidence:.2f}" if confidence > 0 else label
-        label_x, label_y, ha, va = cls._get_smart_line_label_position(x1, y1, x2, y2, height, width)
+        label_x, label_y, ha, va = self._get_smart_line_label_position(x1, y1, x2, y2, height, width)
 
         ax.text(
             label_x, label_y, label_text, size=base_font_size * 0.8, family="sans-serif",
@@ -1092,7 +1438,7 @@ class DetectionVisualizer:
         )
 
     @classmethod
-    def _draw_polygon_hq(cls, ax, label: str, confidence: float, points: List[List[float]],
+    def _draw_polygon_hq(self, ax, label: str, confidence: float, points: List[List[float]],
                          color: str, base_font_size: float, height: int, width: int):
         """高质量模式绘制多边形"""
         polygon_array = np.array(points)
@@ -1110,7 +1456,7 @@ class DetectionVisualizer:
         label_text = f"{label}-{confidence:.2f}" if confidence > 0 else label
         xs = [p[0] for p in points]
         ys = [p[1] for p in points]
-        label_x, label_y, ha, va = cls._get_smart_polygon_label_position(xs, ys, height, width)
+        label_x, label_y, ha, va = self._get_smart_polygon_label_position(xs, ys, height, width)
 
         ax.text(
             label_x, label_y, label_text, size=base_font_size * 0.8, family="sans-serif",
@@ -1120,7 +1466,7 @@ class DetectionVisualizer:
         )
 
     @classmethod
-    def _get_smart_line_label_position(cls, x1: float, y1: float, x2: float, y2: float,
+    def _get_smart_line_label_position(self, x1: float, y1: float, x2: float, y2: float,
                                        height: int, width: int) -> Tuple[float, float, str, str]:
         """智能计算线段标签位置"""
         center_x = (x1 + x2) / 2
@@ -1156,7 +1502,7 @@ class DetectionVisualizer:
         return label_x, label_y, ha, va
 
     @classmethod
-    def _get_smart_polygon_label_position(cls, xs: List[float], ys: List[float],
+    def _get_smart_polygon_label_position(self, xs: List[float], ys: List[float],
                                           height: int, width: int) -> Tuple[float, float, str, str]:
         """智能计算多边形标签位置"""
         center_x = np.mean(xs)
@@ -1178,8 +1524,8 @@ class DetectionVisualizer:
             positions.append((max_x + margin, center_y, 'left', 'center'))
 
         # 如果中心点周围有空间，优先使用中心
-        if len(xs) > 2 and cls._point_in_polygon(center_x, center_y,
-                                                 list(zip(xs, ys))):
+        if len(xs) > 2 and self._point_in_polygon(center_x, center_y,
+                                                  list(zip(xs, ys))):
             positions.append((center_x, center_y, 'center', 'center'))
 
         # 选择最佳位置
@@ -1194,7 +1540,7 @@ class DetectionVisualizer:
         return xs[0], ys[0], 'center', 'center'
 
     @classmethod
-    def _add_smart_shape_label(cls, ax, text: str, x0: float, y0: float, x1: float, y1: float,
+    def _add_smart_shape_label(self, ax, text: str, x0: float, y0: float, x1: float, y1: float,
                                color: str, base_font_size: float, height: int, width: int):
         """智能为形状添加标签"""
         # 计算可用空间
@@ -1243,16 +1589,16 @@ class DetectionVisualizer:
     # ==================== 保持原有功能，增加新格式支持 ====================
 
     @classmethod
-    def draw_bounding_boxes(cls, image, detections, mode='fast', **kwargs):
+    def draw_bounding_boxes(self, image, detections, mode='fast', **kwargs):
         """
         兼容方法：支持新旧两种数据格式
         """
         # 自动检测数据格式并转换
-        formatted_detections = cls._auto_format_detections(detections)
-        return cls.visualize(image, formatted_detections, mode=mode, **kwargs)
+        formatted_detections = self._auto_format_detections(detections)
+        return self.visualize(image, formatted_detections, mode=mode, **kwargs)
 
     @classmethod
-    def _auto_format_detections(cls, detections):
+    def _auto_format_detections(self, detections):
         """自动检测并转换数据格式"""
         if not detections:
             return []
@@ -1261,7 +1607,7 @@ class DetectionVisualizer:
         first_det = detections[0]
         if isinstance(first_det, list) and len(first_det) >= 6:
             # 旧格式转换为新格式
-            return cls._convert_old_to_new_format(detections)
+            return self._convert_old_to_new_format(detections)
         elif isinstance(first_det, dict):
             # 已经是新格式
             return detections
@@ -1269,7 +1615,7 @@ class DetectionVisualizer:
             raise ValueError("无法识别的检测结果格式")
 
     @classmethod
-    def _convert_old_to_new_format(cls, old_detections):
+    def _convert_old_to_new_format(self, old_detections):
         """将旧格式转换为新格式"""
         new_detections = []
         for det in old_detections:
@@ -1286,40 +1632,40 @@ class DetectionVisualizer:
     # ==================== 保持其他原有方法不变 ====================
 
     @classmethod
-    def _get_class_color(cls, class_name: str) -> Tuple[int, int, int]:
+    def _get_class_color(self, class_name: str) -> Tuple[int, int, int]:
         """为类别生成唯一颜色 (BGR格式)"""
-        if class_name not in cls.COLOR_PALETTE:
+        if class_name not in self.COLOR_PALETTE:
             hash_val = hash(class_name) % 180
             hue = (hash_val * 137) % 180
             hsv_color = np.uint8([[[hue, 200, 200]]])
             bgr_color = cv2.cvtColor(hsv_color, cv2.COLOR_HSV2BGR)
-            cls.COLOR_PALETTE[class_name] = tuple(map(int, bgr_color[0][0]))
-        return cls.COLOR_PALETTE[class_name]
+            self.COLOR_PALETTE[class_name] = tuple(map(int, bgr_color[0][0]))
+        return self.COLOR_PALETTE[class_name]
 
     @classmethod
-    def _get_mpl_class_color(cls, class_name: str) -> str:
+    def _get_mpl_class_color(self, class_name: str) -> str:
         """为类别生成Matplotlib颜色"""
-        bgr_color = cls._get_class_color(class_name)
+        bgr_color = self._get_class_color(class_name)
         rgb_color = (bgr_color[2] / 255, bgr_color[1] / 255, bgr_color[0] / 255)
         return mplc.to_hex(rgb_color)
 
     @classmethod
-    def _is_valid_bbox(cls, image: np.ndarray, x1: int, y1: int, x2: int, y2: int) -> bool:
+    def _is_valid_bbox(self, image: np.ndarray, x1: int, y1: int, x2: int, y2: int) -> bool:
         """验证边界框坐标有效性"""
         h, w = image.shape[:2]
         return (0 <= x1 < x2 <= w) and (0 <= y1 < y2 <= h)
 
     @classmethod
-    def _save_image(cls, image: np.ndarray, path: str):
+    def _save_image(self, image: np.ndarray, path: str):
         """保存图像到文件"""
         os.makedirs(os.path.dirname(path), exist_ok=True)
         cv2.imwrite(path, image)
 
     # 快捷方法别名（保持兼容）
     @classmethod
-    def fast_draw(cls, image, detections, **kwargs):
-        return cls.visualize(image, detections, mode='fast', **kwargs)
+    def fast_draw(self, image, detections, **kwargs):
+        return self.visualize(image, detections, mode='fast', **kwargs)
 
     @classmethod
-    def hq_draw(cls, image, detections, **kwargs):
-        return cls.visualize(image, detections, mode='high', **kwargs)
+    def hq_draw(self, image, detections, **kwargs):
+        return self.visualize(image, detections, mode='high', **kwargs)

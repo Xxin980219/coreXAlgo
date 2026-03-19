@@ -16,7 +16,7 @@ from .bbox_util import *
 from .ftp_client import *
 from .sftp_client import *
 from .mt_db_client import *
-from .mt_file_downloader import *
+from .mt_file_transfer import *
 from .constants import *
 
 basic_all = [
