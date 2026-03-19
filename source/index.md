@@ -2,7 +2,7 @@
 
 <div class="hero-section">
   <div class="hero-content">
-    <div class="hero-badge">🚀 v0.5.1</div>
+    <div class="hero-badge">🚀 v0.5.2</div>
     <h1 class="hero-title">coreXAlgo</h1>
     <p class="hero-subtitle">算法开发工具库</p>
     <p class="hero-description">为算法工程师打造的综合性工具集合，提供高效、可靠的技术支持，显著提升开发效率</p>
@@ -503,7 +503,7 @@ coreXAlgo/
 │   ├── 📄 ftp_client.py       # FTP客户端
 │   ├── 📄 sftp_client.py      # SFTP客户端
 │   ├── 📄 mt_db_client.py     # 多线程数据库客户端
-│   └── 📄 mt_file_downloader.py # 多线程文件下载器
+│   └── 📄 mt_file_transfer.py # 多线程文件传输器
 │
 ├── 📁 adv_cv/                 # 高级计算机视觉模块
 │   └── 📄 basic.py           # 图像处理功能
@@ -527,7 +527,7 @@ coreXAlgo/
 <div class="info-section">
   <div class="info-item">
     <span class="info-label">📦 当前版本</span>
-    <span class="info-value">0.5.1</span>
+    <span class="info-value">0.5.2</span>
   </div>
   <div class="info-item">
     <span class="info-label">🐍 Python 兼容</span>
@@ -535,7 +535,7 @@ coreXAlgo/
   </div>
   <div class="info-item">
     <span class="info-label">📅 更新日期</span>
-    <span class="info-value">2026-03-03</span>
+    <span class="info-value">2026-03-19</span>
   </div>
   <div class="info-item">
     <span class="info-label">👤 作者</span>
@@ -663,6 +663,22 @@ clean_unmatched_files(
 </div>
 
 ## 📝 版本更新日志
+
+<div class="changelog-item">
+  <div class="changelog-version">📌 版本 0.5.2 (2026-03-19)</div>
+  <ul class="changelog-list">
+    <li>优化了 utils/ftp_client.py 和 utils/sftp_client.py，添加了多线程支持</li>
+    <li>实现了线程安全的连接池管理</li>
+    <li>添加了 _process_upload_batch 和 _process_single_upload 方法用于并行上传</li>
+    <li>添加了 _process_download_batch 和 _process_single_download 方法用于并行下载</li>
+    <li>修复了 max_workers 参数未使用的问题</li>
+    <li>修复了 utils/mt_file_transfer.py 中的返回值处理问题</li>
+    <li>确保 parallel_download_by_instances 正确返回成功下载数量</li>
+    <li>统一了FTP和SFTP客户端的返回值处理格式</li>
+    <li>增强了线程安全机制，添加了 threading.RLock() 线程安全锁</li>
+    <li>优化了文件传输性能，支持批量处理文件传输</li>
+  </ul>
+</div>
 
 <div class="changelog-item">
   <div class="changelog-version">📌 版本 0.5.1 (2026-03-03)</div>
