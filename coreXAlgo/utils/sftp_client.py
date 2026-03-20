@@ -1,15 +1,14 @@
-import io
 import os
-import time
 import socket
 import threading
+import time
 from typing import Dict, Callable, Optional, List, Union, Tuple, Any
+
 import paramiko
+from paramiko.ssh_exception import SSHException
 from tqdm import tqdm
-from paramiko.ssh_exception import SSHException, AuthenticationException
 
 from .basic import set_logging
-from .constants import TIMEOUT, RETRY_TIMES
 
 
 class SFTPClient:
@@ -126,7 +125,7 @@ class SFTPClient:
         self.max_connections = max_connections
         self._current_sftp_name = None
         self._lock = threading.RLock()  # 线程安全锁，支持递归调用
-        
+
         # 验证和标准化配置
         if not sftp_configs:
             self.logger.warning("警告: 未提供SFTP配置")
@@ -142,7 +141,7 @@ class SFTPClient:
                 if 'username' not in config:
                     self.logger.error(f"配置 '{name}' 缺少必要参数: username")
                     continue
-                
+
                 # 密码管理：从环境变量获取密码
                 if 'password_env' in config:
                     password_env = config['password_env']
@@ -152,14 +151,14 @@ class SFTPClient:
                         self.logger.info(f"配置 '{name}' 从环境变量获取密码: {password_env}")
                     else:
                         self.logger.warning(f"配置 '{name}' 环境变量 '{password_env}' 未设置")
-                
+
                 # 设置默认值
                 config.setdefault('timeout', 30)  # 默认超时30秒
                 config.setdefault('retry_times', 3)  # 默认重试3次
                 config.setdefault('keepalive', 30)  # 默认心跳30秒
                 config.setdefault('private_key', None)  # 默认无私钥
                 config.setdefault('passphrase', None)  # 默认无私钥密码
-                
+
                 # 私钥密码管理：从环境变量获取
                 if 'passphrase_env' in config:
                     passphrase_env = config['passphrase_env']
@@ -167,7 +166,7 @@ class SFTPClient:
                     if passphrase:
                         config['passphrase'] = passphrase
                         self.logger.info(f"配置 '{name}' 从环境变量获取私钥密码: {passphrase_env}")
-                
+
                 # 加载私钥
                 if config.get('private_key'):
                     try:
@@ -183,11 +182,11 @@ class SFTPClient:
                             self.logger.error(f"配置 '{name}' 私钥文件不存在: {private_key_path}")
                     except Exception as e:
                         self.logger.error(f"配置 '{name}' 加载私钥失败: {e}")
-                
+
                 # 验证认证方式
                 if 'password' not in config and 'pkey' not in config:
                     self.logger.error(f"配置 '{name}' 缺少认证方式: password 或 private_key")
-                
+
                 # 清理敏感信息，避免日志泄露
                 if 'password' in config:
                     config['_password_masked'] = True
@@ -230,7 +229,7 @@ class SFTPClient:
                 ]
         except Exception as e:
             self.logger.debug(f"设置密钥交换算法失败: {e}")
-        
+
         # 使用更兼容的加密算法
         try:
             if hasattr(transport, 'ciphers'):
@@ -240,7 +239,7 @@ class SFTPClient:
                 ]
         except Exception as e:
             self.logger.debug(f"设置加密算法失败: {e}")
-        
+
         # 使用更兼容的MAC算法
         try:
             if hasattr(transport, 'mac_algorithms'):
@@ -257,7 +256,7 @@ class SFTPClient:
         """获取SFTP连接，支持自动重连"""
         config = None
         actual_retry_count = retry_count
-        
+
         # 首先获取配置信息
         with self._lock:
             if sftp_name not in self._configs:
@@ -265,7 +264,7 @@ class SFTPClient:
                 return None
             config = self._configs[sftp_name]
             actual_retry_count = retry_count if retry_count is not None else config.get('retry_times', 3)
-        
+
         # 使用实际的重试次数
         for attempt in range(actual_retry_count):
             with self._lock:
@@ -290,25 +289,25 @@ class SFTPClient:
             # 尝试创建新连接
             try:
                 self.logger.info(f"尝试连接到 {sftp_name} ({config['host']}:{config['port']}) 第{attempt + 1}次...")
-                
+
                 # 获取超时设置
                 timeout = config.get('timeout', 30)
-                
+
                 # 创建传输层，设置超时
                 transport = paramiko.Transport((config['host'], config['port']))
-                
+
                 # 优化连接参数
                 transport.default_window_size = 2147483647  # 最大窗口大小
                 transport.packetizer.REKEY_BYTES = 1024 * 1024 * 1024  # 1GB后重新协商密钥
                 transport.packetizer.REKEY_PACKETS = 1000000  # 减少重新协商频率
-                
+
                 # 设置keepalive
                 keepalive = config.get('keepalive', 30)
                 transport.set_keepalive(keepalive)
-                
+
                 # 禁用压缩，减少计算压力
                 transport.use_compression(False)
-                
+
                 # 安全配置 - 使用更兼容的设置
                 try:
                     if hasattr(transport, 'kex_algorithms'):
@@ -320,7 +319,7 @@ class SFTPClient:
                         ]
                 except Exception as e:
                     self.logger.debug(f"设置密钥交换算法失败: {e}")
-                
+
                 try:
                     if hasattr(transport, 'ciphers'):
                         transport.ciphers = [
@@ -329,7 +328,7 @@ class SFTPClient:
                         ]
                 except Exception as e:
                     self.logger.debug(f"设置加密算法失败: {e}")
-                
+
                 try:
                     if hasattr(transport, 'mac_algorithms'):
                         transport.mac_algorithms = [
@@ -338,21 +337,20 @@ class SFTPClient:
                         ]
                 except Exception as e:
                     self.logger.debug(f"设置MAC算法失败: {e}")
-                
-                # 连接超时设置
+
+                # 连接超时设置（Transport.connect 不支持 timeout 参数）
                 transport.connect(
                     username=config['username'],
                     password=config.get('password'),
-                    pkey=config.get('pkey'),
-                    timeout=timeout
+                    pkey=config.get('pkey')
                 )
-                
+
                 # 创建SFTP客户端
                 sftp = paramiko.SFTPClient.from_transport(transport)
-                
+
                 # 设置SFTP客户端参数
                 sftp.encoding = 'utf-8'
-                
+
                 # 重新获取锁，将新连接添加到池
                 with self._lock:
                     self._connections[sftp_name] = sftp
@@ -598,7 +596,7 @@ class SFTPClient:
                 # 下载文件 - 分块下载优化
                 chunk_size = 8192 * 10  # 80KB chunks
                 total_transferred = downloaded
-                
+
                 if downloaded > 0:
                     # 断点续传
                     self.logger.info(f"开始断点续传: {os.path.basename(remote_path)} (已下载 {downloaded}/{remote_size} 字节)")
@@ -745,7 +743,7 @@ class SFTPClient:
             ... )
         """
         temp_path = remote_path + '.part'
-        
+
         for attempt in range(max_retries):
             try:
                 sftp = self._get_connection(sftp_name)
@@ -836,7 +834,7 @@ class SFTPClient:
                         except Exception as hash_error:
                             # 哈希值验证失败，仅使用大小验证
                             self.logger.warning(f"文件哈希值验证失败: {hash_error}，仅使用大小验证")
-                            
+
                         # 大小验证通过，重命名文件
                         sftp.rename(temp_path, remote_path)
                         self.logger.info(f"✅ 文件上传成功: {remote_path}")
@@ -965,8 +963,8 @@ class SFTPClient:
         return success_count, total_files
 
     def _process_upload_batch(self, sftp_name: str, batch: List[Tuple[str, str]],
-                             batch_start: int, total_files: int, progress_callback: Optional[Callable],
-                             max_workers: int) -> Tuple[int, List[Tuple[str, str]]]:
+                              batch_start: int, total_files: int, progress_callback: Optional[Callable],
+                              max_workers: int) -> Tuple[int, List[Tuple[str, str]]]:
         """
         处理单个上传批次（内部方法）
         
@@ -1018,7 +1016,7 @@ class SFTPClient:
         return batch_success, batch_failed
 
     def _process_single_upload(self, sftp_name: str, local_path: str, remote_path: str,
-                              file_idx: int, total_files: int, progress_callback: Optional[Callable] = None) -> bool:
+                               file_idx: int, total_files: int, progress_callback: Optional[Callable] = None) -> bool:
         """
         处理单个上传任务（用于并行处理）
         """
@@ -1099,9 +1097,9 @@ class SFTPClient:
             operation='upload'
         )
 
-    def download_directory(self, sftp_name: str, remote_dir: str, local_dir: str, 
-                          progress_callback: Optional[Callable] = None, 
-                          batch_size: int = 20) -> Tuple[int, int]:
+    def download_directory(self, sftp_name: str, remote_dir: str, local_dir: str,
+                           progress_callback: Optional[Callable] = None,
+                           batch_size: int = 20) -> Tuple[int, int]:
         """
         下载整个目录
 
@@ -1125,11 +1123,11 @@ class SFTPClient:
         """
         # 获取目录下所有文件
         all_files = self.get_dir_file_list(sftp_name, remote_dir)
-        
+
         if not all_files:
             self.logger.warning(f"远程目录为空: {remote_dir}")
             return 0, 0
-        
+
         # 构建下载任务
         download_tasks = []
         for remote_path in all_files:
@@ -1137,7 +1135,7 @@ class SFTPClient:
             relative_path = os.path.relpath(remote_path, remote_dir)
             local_path = os.path.join(local_dir, relative_path)
             download_tasks.append((remote_path, local_path))
-        
+
         # 批量下载
         return self._batch_download_with_resilience(
             sftp_name=sftp_name,
@@ -1146,9 +1144,9 @@ class SFTPClient:
             progress_callback=progress_callback
         )
 
-    def upload_directory(self, sftp_name: str, local_dir: str, remote_dir: str, 
-                        progress_callback: Optional[Callable] = None, 
-                        batch_size: int = 20) -> Tuple[int, int]:
+    def upload_directory(self, sftp_name: str, local_dir: str, remote_dir: str,
+                         progress_callback: Optional[Callable] = None,
+                         batch_size: int = 20) -> Tuple[int, int]:
         """
         上传整个目录
 
@@ -1170,19 +1168,18 @@ class SFTPClient:
             ... )
             >>> print(f"上传完成: {success}/{total}")
         """
-        import glob
-        
+
         # 获取目录下所有文件
         local_files = []
         for root, dirs, files in os.walk(local_dir):
             for file in files:
                 local_path = os.path.join(root, file)
                 local_files.append(local_path)
-        
+
         if not local_files:
             self.logger.warning(f"本地目录为空: {local_dir}")
             return 0, 0
-        
+
         # 构建上传任务
         upload_tasks = []
         for local_path in local_files:
@@ -1190,22 +1187,22 @@ class SFTPClient:
             relative_path = os.path.relpath(local_path, local_dir)
             remote_path = os.path.join(remote_dir, relative_path).replace('\\', '/')
             upload_tasks.append((local_path, remote_path))
-        
+
         # 批量上传
         total_files = len(upload_tasks)
         success_count = 0
-        
+
         for batch_start in range(0, total_files, batch_size):
             batch_end = min(batch_start + batch_size, total_files)
             batch = upload_tasks[batch_start:batch_end]
-            
+
             self.logger.info(f"上传批次 {batch_start // batch_size + 1}/{(total_files + batch_size - 1) // batch_size}")
-            
+
             for local_path, remote_path in batch:
                 filename = os.path.basename(local_path)
                 if progress_callback:
                     progress_callback(batch_start + 1, total_files, f"上传: {filename}")
-                
+
                 if self.upload_file(sftp_name, local_path, remote_path):
                     success_count += 1
                     if progress_callback:
@@ -1213,7 +1210,7 @@ class SFTPClient:
                 else:
                     if progress_callback:
                         progress_callback(batch_start + 1, total_files, f"❌ 失败: {filename}")
-        
+
         return success_count, total_files
 
     def delete_file(self, sftp_name: str, remote_path: str) -> bool:
@@ -1231,6 +1228,7 @@ class SFTPClient:
             >>> if client.delete_file("server1", "/remote/file.txt"):
             ...     print("文件删除成功")
         """
+
         def operation(sftp):
             sftp.remove(remote_path)
             return True
@@ -1254,6 +1252,7 @@ class SFTPClient:
             >>> if client.rename_file("server1", "/remote/old.txt", "/remote/new.txt"):
             ...     print("文件重命名成功")
         """
+
         def operation(sftp):
             sftp.rename(old_path, new_path)
             return True
@@ -1288,6 +1287,7 @@ class SFTPClient:
                         def operation(sftp):
                             sftp.mkdir(current_path)
                             return True
+
                         result = self._safe_sftp_op(operation, sftp_name)
                         if not result:
                             return False
@@ -1297,6 +1297,7 @@ class SFTPClient:
             def operation(sftp):
                 sftp.mkdir(remote_dir)
                 return True
+
             result = self._safe_sftp_op(operation, sftp_name)
             return result if result is not None else False
 
@@ -1340,6 +1341,7 @@ class SFTPClient:
             def operation(sftp):
                 sftp.rmdir(remote_dir)
                 return True
+
             result = self._safe_sftp_op(operation, sftp_name)
             return result if result is not None else False
 
@@ -1359,6 +1361,7 @@ class SFTPClient:
             >>> if stat:
             ...     print(f"文件大小: {stat.st_size} 字节")
         """
+
         def operation(sftp):
             return sftp.stat(remote_path)
 
@@ -1380,6 +1383,7 @@ class SFTPClient:
             >>> if client.change_permissions("server1", "/remote/file.sh", 0o755):
             ...     print("权限修改成功")
         """
+
         def operation(sftp):
             sftp.chmod(remote_path, mode)
             return True
@@ -1429,7 +1433,7 @@ class SFTPClient:
 
             # 累计成功下载数量
             success_count += batch_success
-            
+
             # 将本批次失败的文件添加到总失败列表
             failed_files.extend(batch_failed)
 
@@ -1448,8 +1452,8 @@ class SFTPClient:
         return success_count, total_files
 
     def _process_download_batch(self, sftp_name: str, batch: List[Tuple[str, str]],
-                               batch_start: int, total_files: int, progress_callback: Optional[Callable],
-                               max_workers: int) -> Tuple[int, List[Tuple[str, str]]]:
+                                batch_start: int, total_files: int, progress_callback: Optional[Callable],
+                                max_workers: int) -> Tuple[int, List[Tuple[str, str]]]:
         """
         处理单个下载批次（内部方法）
         
@@ -1520,7 +1524,7 @@ class SFTPClient:
         """
         retry_success = 0
         self.logger.info(f"重试 {len(failed_files)} 个失败的文件...")
-        
+
         for remote_path, local_path in failed_files.copy():
             filename = os.path.basename(remote_path)
             if self._download_single_file_with_retry(sftp_name, remote_path, local_path, max_retries=2):
@@ -1543,10 +1547,8 @@ class SFTPClient:
 
         return retry_success
 
-
-
     def _process_single_download(self, sftp_name: str, remote_path: str, local_path: str,
-                                file_idx: int, total_files: int, progress_callback: Optional[Callable] = None) -> bool:
+                                 file_idx: int, total_files: int, progress_callback: Optional[Callable] = None) -> bool:
         """
         处理单个下载任务（用于并行处理）
         """
@@ -1859,7 +1861,7 @@ class SFTPClient:
         """
         # 检查是否是网络相关异常
         is_network_error = isinstance(e, (SSHException, EOFError, socket.error, paramiko.SSHException))
-        
+
         if is_network_error:
             self.logger.warning(f"{operation}失败 (尝试 {attempt + 1}/{max_retries}): {e}")
             if attempt < max_retries - 1:
@@ -1913,7 +1915,7 @@ class SFTPClient:
                     else:
                         self.logger.error("无法获取SFTP连接")
                         return None
-                
+
                 try:
                     result = operation(sftp)
                     return result

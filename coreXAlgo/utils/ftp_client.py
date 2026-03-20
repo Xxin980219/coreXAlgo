@@ -1,15 +1,15 @@
-import io
 import os
 import socket
-import time
 import threading
+import time
 from ftplib import FTP, error_proto, error_perm, error_temp, all_errors, error_reply
-from typing import Dict, Callable, Optional, List, Union, Tuple, Any
+from typing import Dict, Callable, Optional, List, Union, Tuple
 
 from tqdm import tqdm
 
 from .basic import set_logging
 from .constants import TIMEOUT, RETRY_TIMES
+
 
 class FTPClient:
     """
@@ -80,7 +80,7 @@ class FTPClient:
         self.max_connections = max_connections
         self._current_ftp_name = None
         self._lock = threading.RLock()  # 线程安全锁，支持递归调用
-        
+
         # 验证和标准化配置
         if not ftp_configs:
             self.logger.warning("警告: 未提供FTP配置")
@@ -96,7 +96,7 @@ class FTPClient:
                 if 'username' not in config:
                     self.logger.error(f"配置 '{name}' 缺少必要参数: username")
                     continue
-                
+
                 # 密码管理：从环境变量获取密码
                 if 'password_env' in config:
                     password_env = config['password_env']
@@ -106,7 +106,7 @@ class FTPClient:
                         self.logger.info(f"配置 '{name}' 从环境变量获取密码: {password_env}")
                     else:
                         self.logger.warning(f"配置 '{name}' 环境变量 '{password_env}' 未设置")
-                
+
                 # 设置默认值
                 config.setdefault('timeout', 30)  # 默认超时30秒
                 config.setdefault('retry_times', 3)  # 默认重试3次
@@ -114,7 +114,7 @@ class FTPClient:
                 config.setdefault('keepalive', 30)  # 默认心跳30秒
                 config.setdefault('private_key', None)  # 默认无私钥
                 config.setdefault('passphrase', None)  # 默认无私钥密码
-                
+
                 # 私钥密码管理：从环境变量获取
                 if 'passphrase_env' in config:
                     passphrase_env = config['passphrase_env']
@@ -122,7 +122,7 @@ class FTPClient:
                     if passphrase:
                         config['passphrase'] = passphrase
                         self.logger.info(f"配置 '{name}' 从环境变量获取私钥密码: {passphrase_env}")
-                
+
                 # 加载私钥（如果支持）
                 if config.get('private_key'):
                     try:
@@ -138,11 +138,11 @@ class FTPClient:
                             self.logger.error(f"配置 '{name}' 私钥文件不存在: {private_key_path}")
                     except Exception as e:
                         self.logger.error(f"配置 '{name}' 加载私钥失败: {e}")
-                
+
                 # 验证认证方式
                 if 'password' not in config and 'pkey' not in config:
                     self.logger.error(f"配置 '{name}' 缺少认证方式: password 或 private_key")
-                
+
                 # 清理敏感信息，避免日志泄露
                 if 'password' in config:
                     config['_password_masked'] = True
@@ -285,7 +285,7 @@ class FTPClient:
                 private_key = config.get('private_key')
                 if private_key:
                     self.logger.info(f"注意: FTP协议不支持SSH密钥认证，忽略私钥配置: {private_key}")
-                
+
                 login_resp = ftp.login(config['username'], config.get('password', ''))
                 if '230' not in login_resp:
                     raise RuntimeError(f"登录失败: {login_resp}")
@@ -512,7 +512,7 @@ class FTPClient:
         # 保存当前连接，以便递归调用时使用
         self._ftp = ftp
         self.ftp_name = ftp_name
-        
+
         file_list = []
 
         try:
@@ -527,7 +527,7 @@ class FTPClient:
                 # 跳过特殊目录
                 if item in ['.', '..']:
                     continue
-                
+
                 full_path = os.path.join(ftp_dir, item) if ftp_dir else item
 
                 # 检查是否为目录
@@ -581,93 +581,136 @@ class FTPClient:
                         continue
                     return False
 
-                # 分离目录和文件名
-                remote_dir, filename = os.path.split(remote_path)
-                local_path = os.path.join(local_path, filename) if os.path.isdir(local_path) else local_path
+                # 分离目录和文件名，统一使用正斜杠作为路径分隔符
+                remote_path = remote_path.replace('\\', '/')
+                self.logger.info(f"处理远程路径: {remote_path}")
 
-                # 获取文件大小
+                # 直接使用完整路径进行下载，不分离目录和文件名
+                # 有些FTP服务器可能对路径格式有特殊要求
                 try:
-                    file_size = ftp.size(remote_path)
-                    if not file_size:
-                        self.logger.error("无法获取远程文件大小")
-                        return False
-                except Exception as e:
-                    self.logger.error(f"获取文件大小失败: {e}")
-                    if attempt < max_retries - 1:
-                        time.sleep(2 ** attempt)
-                        self._close_connection(ftp_name)
-                        continue
-                    return False
+                    # 尝试直接使用完整路径下载
+                    self.logger.info(f"尝试直接使用完整路径下载: {remote_path}")
 
-                if file_size == 0:
-                    self.logger.warning(f"远程文件大小为0: {os.path.basename(remote_path)}")
-                    # 删除可能的空文件
-                    if os.path.exists(local_path):
-                        os.remove(local_path)
-                    return False
+                    # 检查连接是否有效
+                    if not (ftp and hasattr(ftp, 'sock') and ftp.sock):
+                        self.logger.warning("FTP连接无效或已关闭，重新获取连接")
+                        ftp = self._get_connection(ftp_name)
+                        if not ftp:
+                            self.logger.error("无法重新获取FTP连接")
+                            if attempt < max_retries - 1:
+                                time.sleep(2 ** attempt)
+                                self._close_connection(ftp_name)
+                                continue
+                            return False
 
-                # 创建本地目录
-                local_dir = os.path.dirname(local_path)
-                if local_dir and not os.path.exists(local_dir):
-                    os.makedirs(local_dir, exist_ok=True)
-
-                # 检查断点续传
-                downloaded = 0
-                if os.path.exists(local_path):
-                    local_size = os.path.getsize(local_path)
-                    if local_size == file_size:
-                        self.logger.info(f"🔄 文件已存在且完整，跳过下载: {local_path}")
-                        return True
-                    elif 0 < local_size < file_size:
-                        downloaded = local_size
-                        self.logger.info(f"⏩ 检测到部分文件，从 {local_size} 字节续传: {os.path.basename(remote_path)}")
-                        try:
-                            ftp.voidcmd(f"REST {local_size}")  # FTP断点续传命令
-                        except error_reply as e:
-                            if "350" not in str(e):
-                                self.logger.warning("⚠️ 续传协商失败，重新下载")
+                    # 获取文件大小
+                    file_size = None
+                    try:
+                        file_size = ftp.size(remote_path)
+                        if file_size == 0:
+                            self.logger.warning(f"远程文件大小为0: {os.path.basename(remote_path)}")
+                            # 删除可能的空文件
+                            if os.path.exists(local_path):
                                 os.remove(local_path)
-                                downloaded = 0
+                            return False
+                    except Exception as e:
+                        self.logger.warning(f"获取文件大小失败: {e}")
+                        self.logger.info("继续尝试下载文件...")
 
-                # 下载文件 - 分块下载优化
-                total_transferred = downloaded
-                
-                if downloaded > 0:
-                    # 断点续传
-                    self.logger.info(f"开始断点续传: {os.path.basename(remote_path)} (已下载 {downloaded}/{file_size} 字节)")
-                    with open(local_path, 'ab') as f:
-                        # 定义下载回调
-                        def callback(data):
-                            nonlocal total_transferred
-                            f.write(data)
-                            total_transferred += len(data)
-                            if progress_callback:
-                                progress_callback(total_transferred, file_size)
-                        
-                        ftp.retrbinary(f"RETR {remote_path}", callback, bufsize, rest=downloaded)
-                else:
-                    # 全新下载
-                    self.logger.info(f"开始全新下载: {os.path.basename(remote_path)} (总大小: {file_size} 字节)")
-                    with open(local_path, 'wb') as f:
-                        # 定义下载回调
-                        def callback(data):
-                            nonlocal total_transferred
-                            f.write(data)
-                            total_transferred += len(data)
-                            if progress_callback:
-                                progress_callback(total_transferred, file_size)
-                        
-                        ftp.retrbinary(f"RETR {remote_path}", callback, bufsize)
+                    # 创建本地目录
+                    local_dir = os.path.dirname(local_path)
+                    if local_dir and not os.path.exists(local_dir):
+                        os.makedirs(local_dir, exist_ok=True)
 
-                # 验证文件完整性
-                final_size = os.path.getsize(local_path)
-                if final_size == file_size:
-                    self.logger.info(f"✅ 文件已保存至: {local_path}")
-                    return True
-                else:
-                    self.logger.error(f"文件大小不匹配: {final_size}/{file_size}")
-                    if os.path.exists(local_path):
-                        os.remove(local_path)
+                    # 检查断点续传
+                    downloaded = 0
+                    if file_size and os.path.exists(local_path):
+                        local_size = os.path.getsize(local_path)
+                        if local_size == file_size:
+                            self.logger.info(f"🔄 文件已存在且完整，跳过下载: {local_path}")
+                            return True
+                        elif 0 < local_size < file_size:
+                            downloaded = local_size
+                            self.logger.info(f"⏩ 检测到部分文件，从 {local_size} 字节续传: {os.path.basename(remote_path)}")
+                            try:
+                                ftp.voidcmd(f"REST {local_size}")  # FTP断点续传命令
+                            except error_reply as e:
+                                if "350" not in str(e):
+                                    self.logger.warning("⚠️ 续传协商失败，重新下载")
+                                    os.remove(local_path)
+                                    downloaded = 0
+                    else:
+                        # 无法获取文件大小，始终从头开始下载
+                        if os.path.exists(local_path):
+                            os.remove(local_path)
+                            downloaded = 0
+
+                    # 下载文件 - 分块下载优化
+                    total_transferred = downloaded
+
+                    if downloaded > 0:
+                        # 断点续传
+                        size_info = f" (已下载 {downloaded}/{file_size} 字节)" if file_size else ""
+                        self.logger.info(f"开始断点续传: {os.path.basename(remote_path)}{size_info}")
+                        with open(local_path, 'ab') as f:
+                            # 定义下载回调
+                            def callback(data):
+                                nonlocal total_transferred
+                                f.write(data)
+                                total_transferred += len(data)
+                                if progress_callback:
+                                    progress_callback(total_transferred, file_size)
+
+                            # 使用完整路径进行下载
+                            ftp.retrbinary(f"RETR {remote_path}", callback, bufsize, rest=downloaded)
+                    else:
+                        # 全新下载
+                        size_info = f" (总大小: {file_size} 字节)" if file_size else ""
+                        self.logger.info(f"开始全新下载: {os.path.basename(remote_path)}{size_info}")
+                        with open(local_path, 'wb') as f:
+                            # 定义下载回调
+                            def callback(data):
+                                nonlocal total_transferred
+                                f.write(data)
+                                total_transferred += len(data)
+                                if progress_callback:
+                                    progress_callback(total_transferred, file_size)
+
+                            # 使用完整路径进行下载
+                            ftp.retrbinary(f"RETR {remote_path}", callback, bufsize)
+
+                    # 验证文件完整性
+                    final_size = os.path.getsize(local_path)
+                    if file_size:
+                        if final_size == file_size:
+                            self.logger.info(f"✅ 文件已保存至: {local_path}")
+                            return True
+                        else:
+                            self.logger.error(f"文件大小不匹配: {final_size}/{file_size}")
+                            if os.path.exists(local_path):
+                                os.remove(local_path)
+                            if attempt < max_retries - 1:
+                                time.sleep(2 ** attempt)
+                                self._close_connection(ftp_name)
+                                continue
+                            return False
+                    else:
+                        # 无法获取文件大小，只要文件存在且大小大于0，就认为下载成功
+                        if final_size > 0:
+                            self.logger.info(f"✅ 文件已保存至: {local_path} (大小: {final_size} 字节)")
+                            return True
+                        else:
+                            self.logger.error(f"下载的文件为空: {local_path}")
+                            if os.path.exists(local_path):
+                                os.remove(local_path)
+                            if attempt < max_retries - 1:
+                                time.sleep(2 ** attempt)
+                                self._close_connection(ftp_name)
+                                continue
+                            return False
+                except Exception as e:
+                    self.logger.error(f"直接使用完整路径下载失败: {e}")
+                    # 直接返回失败，不再尝试传统方法
                     if attempt < max_retries - 1:
                         time.sleep(2 ** attempt)
                         self._close_connection(ftp_name)
@@ -733,8 +776,6 @@ class FTPClient:
             ...     remote_path="/remote/data.zip"
             ... )
         """
-        temp_path = remote_path + '.part'
-        
         for attempt in range(max_retries):
             try:
                 ftp = self._get_connection(ftp_name)
@@ -755,12 +796,21 @@ class FTPClient:
                     self.logger.warning(f"本地文件为空: {local_path}")
                     return False
 
-                # 分离目录和文件名
+                # 分离目录和文件名，统一使用正斜杠作为路径分隔符
+                remote_path = remote_path.replace('\\', '/')
                 remote_dir, filename = os.path.split(remote_path)
-                
-                # 创建远程目录
-                if remote_dir:
-                    try:
+                remote_dir = remote_dir.replace('\\', '/')
+
+                # 保存当前工作目录
+                original_dir = None
+                try:
+                    original_dir = ftp.pwd()
+                except:
+                    pass
+
+                try:
+                    # 创建远程目录
+                    if remote_dir:
                         # 递归创建目录
                         parts = remote_dir.strip('/').split('/')
                         current_path = ''
@@ -773,6 +823,7 @@ class FTPClient:
                                     try:
                                         ftp.mkd(current_path)
                                         self.logger.info(f"创建远程目录: {current_path}")
+                                        ftp.cwd(current_path)
                                     except Exception as e:
                                         self.logger.error(f"创建目录失败: {e}")
                                         if attempt < max_retries - 1:
@@ -780,58 +831,96 @@ class FTPClient:
                                             self._close_connection(ftp_name)
                                             continue
                                         return False
+
+                    # 检查断点续传
+                    uploaded = 0
+                    try:
+                        remote_size = ftp.size(filename)
+                        if remote_size == local_size:
+                            self.logger.info(f"🔄 文件已存在且完整，跳过上传: {remote_path}")
+                            return True
+                        elif remote_size > 0 and remote_size < local_size:
+                            uploaded = remote_size
+                            self.logger.info(f"⏩ 检测到部分上传文件，尝试从字节 {uploaded} 续传")
                     except Exception as e:
-                        self.logger.error(f"处理远程目录失败: {e}")
-                        if attempt < max_retries - 1:
-                            time.sleep(2 ** attempt)
-                            self._close_connection(ftp_name)
-                            continue
-                        return False
+                        self.logger.debug(f"检查文件大小失败: {e}")
+                        pass
 
-                # 检查断点续传
-                uploaded = 0
-                try:
-                    remote_size = ftp.size(filename)
-                    if remote_size == local_size:
-                        self.logger.info(f"🔄 文件已存在且完整，跳过上传: {remote_path}")
-                        return True
-                    elif remote_size > 0 and remote_size < local_size:
-                        uploaded = remote_size
-                        self.logger.info(f"⏩ 检测到部分上传文件，尝试从字节 {uploaded} 续传")
-                except:
-                    pass
+                    # 上传文件
+                    total_transferred = uploaded
 
-                # 上传文件
-                total_transferred = uploaded
-                
-                with open(local_path, 'rb') as fp:
-                    if uploaded > 0:
-                        fp.seek(uploaded)  # 跳转到续传位置
+                    # 使用临时文件上传，然后重命名
+                    temp_filename = f"{filename}.part"
 
-                    # 定义上传回调
-                    def callback(data):
-                        nonlocal total_transferred
-                        total_transferred += len(data)
-                        if progress_callback:
-                            progress_callback(total_transferred, local_size)
+                    with open(local_path, 'rb') as fp:
+                        if uploaded > 0:
+                            fp.seek(uploaded)  # 跳转到续传位置
 
-                    # 分块上传
-                    while total_transferred < local_size:
-                        chunk = fp.read(min(bufsize, local_size - total_transferred))
-                        if not chunk:
-                            break
+                        # 定义上传回调
+                        def callback(data):
+                            nonlocal total_transferred
+                            total_transferred += len(data)
+                            if progress_callback:
+                                progress_callback(total_transferred, local_size)
 
+                        # 使用单个 storbinary 调用上传整个文件
                         # 使用APPE命令进行续传，STOR命令进行新上传
-                        cmd = f"APPE {filename}" if uploaded > 0 else f"STOR {filename}"
-                        ftp.storbinary(cmd, io.BytesIO(chunk), blocksize=len(chunk))
-                        callback(chunk)
+                        cmd = f"APPE {temp_filename}" if uploaded > 0 else f"STOR {temp_filename}"
+                        self.logger.info(f"执行上传命令: {cmd}")
 
-                # 验证完整性
-                if total_transferred != local_size:
-                    raise RuntimeError(f"上传不完整: {total_transferred}/{local_size}字节")
+                        # 执行上传并检查返回值
+                        response = ftp.storbinary(cmd, fp, blocksize=bufsize, callback=callback)
+                        self.logger.info(f"上传命令响应: {response}")
 
-                self.logger.info(f"✅ 文件已上传至: {remote_path}")
-                return True
+                        # 检查响应码是否表示成功
+                        if not response.startswith('226'):
+                            raise RuntimeError(f"上传失败: {response}")
+
+                    # 验证完整性
+                    try:
+                        remote_size = ftp.size(temp_filename)
+                        if remote_size == local_size:
+                            self.logger.info(f"临时文件上传完成，大小验证通过: {remote_size} 字节")
+                            # 重命名临时文件为最终文件名
+                            try:
+                                # FTP协议没有直接的重命名命令，需要使用RNFR和RNTO命令
+                                # 直接使用sendcmd方法发送命令，这样可以处理中间响应
+                                # RNFR命令成功后会返回"350 Ready for RNTO."，这是正常的中间响应
+                                rnfr_response = ftp.sendcmd(f"RNFR {temp_filename}")
+                                self.logger.info(f"RNFR命令响应: {rnfr_response}")
+                                # 执行RNTO命令
+                                response = ftp.sendcmd(f"RNTO {filename}")
+                                self.logger.info(f"RNTO命令响应: {response}")
+                                if not response.startswith('250'):
+                                    raise RuntimeError(f"重命名失败: {response}")
+                                self.logger.info(f"✅ 文件已上传至: {remote_path}")
+                                return True
+                            except Exception as rename_error:
+                                self.logger.error(f"重命名文件失败: {rename_error}")
+                                # 尝试删除临时文件
+                                try:
+                                    ftp.delete(temp_filename)
+                                except:
+                                    pass
+                                raise
+                        else:
+                            raise RuntimeError(f"上传不完整: 本地={local_size}字节, 远程={remote_size}字节")
+                    except Exception as e:
+                        self.logger.error(f"验证文件大小失败: {e}")
+                        # 尝试删除临时文件
+                        try:
+                            ftp.delete(temp_filename)
+                        except:
+                            pass
+                        raise
+
+                finally:
+                    # 恢复到原始工作目录
+                    if original_dir:
+                        try:
+                            ftp.cwd(original_dir)
+                        except:
+                            pass
 
             except (error_perm, error_proto, socket.error) as e:
                 self.logger.warning(f"上传失败 (尝试 {attempt + 1}/{max_retries}): {e}")
@@ -967,7 +1056,7 @@ class FTPClient:
             return None
 
     def verify_file_integrity(self, ftp_name: str, remote_path: str, local_path: str,
-                             hash_algorithm: str = 'md5') -> bool:
+                              hash_algorithm: str = 'md5') -> bool:
         """
         验证文件完整性
 
@@ -995,8 +1084,70 @@ class FTPClient:
             return False
 
         try:
-            remote_size = ftp.size(remote_path)
+            # 统一使用正斜杠作为路径分隔符
+            remote_path = remote_path.replace('\\', '/')
+            # 分离目录和文件名，与upload_file方法保持一致
+            remote_dir, filename = os.path.split(remote_path)
+            remote_dir = remote_dir.replace('\\', '/')
+
+            # 保存当前工作目录
+            original_dir = None
+            try:
+                original_dir = ftp.pwd()
+            except:
+                pass
+
+            # 切换到远程目录
+            if remote_dir:
+                try:
+                    ftp.cwd(remote_dir)
+                except Exception as e:
+                    self.logger.error(f"切换到远程目录失败: {e}")
+                    # 尝试创建目录
+                    try:
+                        parts = remote_dir.strip('/').split('/')
+                        current_path = ''
+                        for part in parts:
+                            if part:
+                                current_path = f"{current_path}/{part}" if current_path else f"/{part}"
+                                try:
+                                    ftp.cwd(current_path)
+                                except:
+                                    try:
+                                        ftp.mkd(current_path)
+                                        ftp.cwd(current_path)
+                                    except Exception as mkd_error:
+                                        self.logger.error(f"创建目录失败: {mkd_error}")
+                                        return False
+                    except Exception as create_error:
+                        self.logger.error(f"创建远程目录失败: {create_error}")
+                        return False
+
+            # 获取文件大小
+            try:
+                remote_size = ftp.size(filename)
+                if remote_size is None:
+                    raise RuntimeError("无法获取远程文件大小")
+            except Exception as e:
+                self.logger.error(f"获取远程文件大小失败: {e}")
+                # 尝试列出目录内容，确认文件是否存在
+                try:
+                    files = ftp.nlst('.')
+                    if filename not in files:
+                        raise RuntimeError(f"文件不存在于远程目录: {filename}")
+                    else:
+                        raise RuntimeError(f"文件存在但无法获取大小: {e}")
+                except Exception as list_error:
+                    raise RuntimeError(f"无法验证文件存在性: {list_error}")
+
             local_size = os.path.getsize(local_path)
+
+            # 恢复到原始工作目录
+            if original_dir:
+                try:
+                    ftp.cwd(original_dir)
+                except:
+                    pass
 
             if remote_size == local_size:
                 self.logger.info(f"文件完整性验证通过: {os.path.basename(local_path)}")
@@ -1011,7 +1162,7 @@ class FTPClient:
 
     def upload_file_list(self, ftp_name, local_path_list, remote_path_list,
                          progress_callback: Optional[Callable[[int, int, str], None]] = None,
-                         batch_size: int = 20, max_workers: int = 1):
+                         batch_size: int = 20, max_workers: int = 1, bufsize: int = 1024):
         """
         批量上传多个文件
 
@@ -1027,6 +1178,7 @@ class FTPClient:
                 - 参数3: 当前文件名
             batch_size (int, optional): 每批处理文件数
             max_workers (int, optional): 最大并行工作线程数，默认为1
+            bufsize (int, optional): 缓冲区大小，默认为1024
 
         Returns:
             tuple: (成功上传数量, 总文件数量)
@@ -1081,7 +1233,7 @@ class FTPClient:
                              f"({batch_start + 1}-{batch_end}/{total_files})")
 
             batch_success, batch_failed = self._process_upload_batch(
-                ftp_name, batch, batch_start, total_files, progress_callback, max_workers
+                ftp_name, batch, batch_start, total_files, progress_callback, max_workers, bufsize
             )
 
             success_count += batch_success
@@ -1105,7 +1257,7 @@ class FTPClient:
     def _process_download_batch(self, ftp_name, batch, batch_start, total_files, progress_callback, max_workers, bufsize):
         """
         处理单个下载批次（内部方法）
-        
+
         Args:
             ftp_name (str): FTP配置名称
             batch (List[Tuple[str, str]]): 下载任务批次
@@ -1114,7 +1266,7 @@ class FTPClient:
             progress_callback (Optional[Callable]): 进度回调函数
             max_workers (int): 最大并行工作线程数
             bufsize (int): 缓冲区大小
-            
+
         Returns:
             Tuple[int, List[Tuple[str, str]]]: (成功数量, 失败任务列表)
         """
@@ -1186,10 +1338,10 @@ class FTPClient:
                 progress_callback(file_idx, total_files, f"❌ 异常: {filename}")
             return False
 
-    def _process_upload_batch(self, ftp_name, batch, batch_start, total_files, progress_callback, max_workers):
+    def _process_upload_batch(self, ftp_name, batch, batch_start, total_files, progress_callback, max_workers, bufsize):
         """
         处理单个上传批次（内部方法）
-        
+
         Args:
             ftp_name (str): FTP配置名称
             batch (List[Tuple[str, str]]): 上传任务批次
@@ -1197,7 +1349,8 @@ class FTPClient:
             total_files (int): 总文件数
             progress_callback (Optional[Callable]): 进度回调函数
             max_workers (int): 最大并行工作线程数
-            
+            bufsize (int): 缓冲区大小
+
         Returns:
             Tuple[int, List[Tuple[str, str]]]: (成功数量, 失败任务列表)
         """
@@ -1216,7 +1369,7 @@ class FTPClient:
                 filename = os.path.basename(local_path)
                 future = executor.submit(
                     self._process_single_upload,
-                    ftp_name, local_path, remote_path, file_idx, total_files, progress_callback
+                    ftp_name, local_path, remote_path, file_idx, total_files, progress_callback, bufsize
                 )
                 future_to_task[future] = (local_path, remote_path, filename)
 
@@ -1237,7 +1390,7 @@ class FTPClient:
 
         return batch_success, batch_failed
 
-    def _process_single_upload(self, ftp_name, local_path, remote_path, file_idx, total_files, progress_callback=None):
+    def _process_single_upload(self, ftp_name, local_path, remote_path, file_idx, total_files, progress_callback=None, bufsize=1024):
         """
         处理单个上传任务（用于并行处理）
         """
@@ -1255,7 +1408,7 @@ class FTPClient:
                 return False
 
             # 上传文件
-            if self.upload_file(ftp_name, local_path, remote_path):
+            if self.upload_file(ftp_name, local_path, remote_path, bufsize=bufsize):
                 # 验证文件完整性
                 if self.verify_file_integrity(ftp_name, remote_path, local_path):
                     if progress_callback:
@@ -1362,4 +1515,3 @@ class FTPClient:
             progress_callback(total_files, total_files, "下载完成")
 
         return success_count, total_files
-

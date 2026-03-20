@@ -1498,7 +1498,7 @@ class MtFileUploader:
             raise ValueError(f"服务器配置 '{server_name}' 不存在，可用配置: {list(self._configs.keys())}")
 
         # 检查本地文件存在性
-        local_files, _ = self.check_local_files_existence(local_path_list)
+        local_files, existing_local_paths = self.check_local_files_existence(local_path_list)
         if not local_files:
             self.logger.warning("无文件可上传")
             return 0
@@ -1518,7 +1518,19 @@ class MtFileUploader:
             # 远程路径是列表
             if len(remote_path_list) < len(local_files):
                 raise ValueError("remote_path_list长度必须大于或等于本地文件列表长度")
-            remote_files = remote_path_list[:len(local_files)]
+            # 过滤远程路径列表，确保与local_files对应
+            if isinstance(local_path_list, list):
+                # 找到local_files中每个文件在原始local_path_list中的索引
+                remote_files = []
+                for local_file in local_files:
+                    try:
+                        idx = local_path_list.index(local_file)
+                        remote_files.append(remote_path_list[idx])
+                    except ValueError:
+                        self.logger.warning(f"无法找到本地文件 {local_file} 在原始列表中的索引")
+            else:
+                # 如果local_path_list不是列表，直接使用前len(local_files)个远程路径
+                remote_files = remote_path_list[:len(local_files)]
 
         if shuffle:
             # 随机打乱文件顺序
@@ -1569,6 +1581,9 @@ class MtFileUploader:
                     progress_callback=lambda p, t, n: self._handle_callback(callback, p, t, n),
                     batch_size=batch_size
                 )
+                # 处理返回值格式
+                if isinstance(success_count, tuple):
+                    success_count = success_count[0]
 
             self.logger.info(f"上传完成: {success_count}/{total_files} 个文件")
 
@@ -1665,7 +1680,7 @@ class MtFileUploader:
             raise ValueError(f"服务器配置 '{server_name}' 不存在，可用配置: {list(self._configs.keys())}")
         
         # 检查本地文件存在性
-        local_files, _ = self.check_local_files_existence(local_path_list)
+        local_files, existing_local_paths = self.check_local_files_existence(local_path_list)
         if not local_files:
             self.logger.warning("无文件可上传")
             return 0
@@ -1682,7 +1697,19 @@ class MtFileUploader:
             # 远程路径是列表
             if len(remote_path_list) < len(local_files):
                 raise ValueError("remote_path_list长度必须大于或等于本地文件列表长度")
-            remote_files = remote_path_list[:len(local_files)]
+            # 过滤远程路径列表，确保与local_files对应
+            if isinstance(local_path_list, list):
+                # 找到local_files中每个文件在原始local_path_list中的索引
+                remote_files = []
+                for local_file in local_files:
+                    try:
+                        idx = local_path_list.index(local_file)
+                        remote_files.append(remote_path_list[idx])
+                    except ValueError:
+                        self.logger.warning(f"无法找到本地文件 {local_file} 在原始列表中的索引")
+            else:
+                # 如果local_path_list不是列表，直接使用前len(local_files)个远程路径
+                remote_files = remote_path_list[:len(local_files)]
         
         if shuffle:
             # 随机打乱文件顺序

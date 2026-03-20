@@ -2,7 +2,7 @@
 
 <div class="hero-section">
   <div class="hero-content">
-    <div class="hero-badge">🚀 v0.5.2</div>
+    <div class="hero-badge">🚀 v0.5.3</div>
     <h1 class="hero-title">coreXAlgo</h1>
     <p class="hero-subtitle">算法开发工具库</p>
     <p class="hero-description">为算法工程师打造的综合性工具集合，提供高效、可靠的技术支持，显著提升开发效率</p>
@@ -527,7 +527,7 @@ coreXAlgo/
 <div class="info-section">
   <div class="info-item">
     <span class="info-label">📦 当前版本</span>
-    <span class="info-value">0.5.2</span>
+    <span class="info-value">0.5.3</span>
   </div>
   <div class="info-item">
     <span class="info-label">🐍 Python 兼容</span>
@@ -535,7 +535,7 @@ coreXAlgo/
   </div>
   <div class="info-item">
     <span class="info-label">📅 更新日期</span>
-    <span class="info-value">2026-03-19</span>
+    <span class="info-value">2026-03-20</span>
   </div>
   <div class="info-item">
     <span class="info-label">👤 作者</span>
@@ -663,6 +663,20 @@ clean_unmatched_files(
 </div>
 
 ## 📝 版本更新日志
+
+<div class="changelog-item">
+  <div class="changelog-version">📌 版本 0.5.3 (2026-03-20)</div>
+  <ul class="changelog-list">
+    <li>修复了 utils/ftp_client.py 中的上传和下载问题</li>
+    <li>实现了临时文件（.part）上传和重命名机制，确保文件上传的可靠性</li>
+    <li>修复了FTP下载时因无法获取文件大小而失败的问题</li>
+    <li>改进了目录切换逻辑，确保在正确的目录中执行文件操作</li>
+    <li>修复了FTP重命名操作失败的问题，使用 sendcmd 代替 voidcmd 处理 "350 Ready for RNTO" 响应</li>
+    <li>移除了传统下载方法，简化代码结构</li>
+    <li>优化了错误处理和日志记录</li>
+    <li>增强了文件传输的可靠性，添加了文件存在性检查</li>
+  </ul>
+</div>
 
 <div class="changelog-item">
   <div class="changelog-version">📌 版本 0.5.2 (2026-03-19)</div>
